@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { LayoutChangeEvent, Platform, StyleSheet, Text, View } from 'react-native';
-import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import type { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useAnimatedStyle,
@@ -25,7 +25,9 @@ const TAB_CONFIG: Record<
   profile: { label: 'Profile', icon: 'person-outline', activeIcon: 'person' },
 };
 
-export function BlobTabBar({ state, navigation }: BottomTabBarProps) {
+type BottomTabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>['tabBar']>>[0];
+
+export function BlobTabBar({ state, navigateToTab }: BottomTabBarProps) {
   const { colors, reducedMotion } = useTheme();
   const insets = useSafeAreaInsets();
   const [barWidth, setBarWidth] = useState(0);
@@ -109,16 +111,11 @@ export function BlobTabBar({ state, navigation }: BottomTabBarProps) {
           };
 
           const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-            if (!isFocused && !event.defaultPrevented) {
+            if (!isFocused) {
               if (Platform.OS !== 'web') {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
               }
-              navigation.navigate(route.name);
+              navigateToTab(route.key);
             }
           };
 
