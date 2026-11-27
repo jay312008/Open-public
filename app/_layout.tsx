@@ -13,6 +13,7 @@ function RootNavigator() {
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Stack screenOptions={{ headerShown: false, animation: 'fade_from_bottom' }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="auth" />
         <Stack.Screen name="lesson/[id]" />
         <Stack.Screen name="leaderboard" />
         <Stack.Screen name="notifications" />

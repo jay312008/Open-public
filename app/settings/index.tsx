@@ -61,6 +61,12 @@ export default function SettingsScreen() {
           <View style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {[
               {
+                icon: 'cloud-outline' as const,
+                title: 'Cloud Account & Sync',
+                sub: 'Sign in or create a Supabase account',
+                route: '/auth' as const,
+              },
+              {
                 icon: 'person-outline' as const,
                 title: 'Account & Profile',
                 sub: `${profile.displayName} · @${profile.username}`,
@@ -87,7 +93,7 @@ export default function SettingsScreen() {
             ].map((item, idx) => (
               <AnimatedPressable
                 key={item.title}
-                onPress={() => router.push(item.route)}
+                onPress={() => router.push(item.route as never)}
                 style={[
                   styles.menuRow,
                   idx > 0 && { borderTopWidth: 1, borderTopColor: colors.borderSubtle },

@@ -71,9 +71,15 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
   }
 
   if (req.method === 'GET') {
+    const hasSupabase = Boolean(
+      process.env.EXPO_PUBLIC_SUPABASE_URL ||
+        process.env.NEXT_PUBLIC_SUPABASE_URL ||
+        process.env.SUPABASE_URL
+    );
     res.status(200).json({
       ok: true,
       hasApiKey: Boolean(process.env.NVIDIA_API_KEY),
+      hasSupabase,
       model: process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct',
     });
     return;
