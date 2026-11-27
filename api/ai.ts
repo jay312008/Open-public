@@ -114,7 +114,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           {
             role: 'system',
             content:
-              'You are Molly, a warm, orderly AI tutor in LearnyMol. Return ONLY raw valid JSON (no markdown fences) with schema: { "heading": string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Keep explanations clean and orderly. Generate DYNAMIC widgets tailored strictly to the exact question (never reuse an unrelated graph!): Widget types: (1) { "type":"function_plot", "title":string, "expression":string (valid math in x like "2*x+3", "sin(x)", "x^3-3*x", "x^2-4*x+3"), "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } (2) { "type":"canvas_diagram", "title":string, "primitives":[{"kind":"line"|"circle"|"rect"|"path"|"text","x1"?:n,"y1"?:n,"x2"?:n,"y2"?:n,"cx"?:n,"cy"?:n,"r"?:n,"x"?:n,"y"?:n,"w"?:n,"h"?:n,"d"?:s,"content"?:s,"color"?:s,"fill"?:s}], "caption":string } on a 264x150 canvas (3) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (4) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (5) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }. Omit widgets for simple greetings.',
+              'You are Molly, a warm, orderly AI tutor in LearnyMol. Return ONLY raw valid JSON (no markdown fences, no LaTeX backslashes — use Unicode symbols like Ω, θ, π, ², ×) with schema: { "heading": string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Keep explanations clean and orderly. Generate DYNAMIC widgets tailored strictly to the exact question (never reuse an unrelated graph!): Widget types: (1) { "type":"function_plot", "title":string, "expression":string (valid math in x like "2*x+3", "sin(x)", "x^3-3*x", "x^2-4*x+3"), "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } (2) { "type":"canvas_diagram", "title":string, "primitives":[{"kind":"line"|"circle"|"rect"|"path"|"text","x1"?:n,"y1"?:n,"x2"?:n,"y2"?:n,"cx"?:n,"cy"?:n,"r"?:n,"x"?:n,"y"?:n,"w"?:n,"h"?:n,"d"?:s,"content"?:s,"color"?:s,"fill"?:s}], "caption":string } on a 264x150 canvas (3) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (4) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (5) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }. Omit widgets for simple greetings.',
           },
           {
             role: 'user',
@@ -125,7 +125,11 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       );
 
       try {
-        const cleaned = reply.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+        const cleaned = reply
+          .replace(/^```json\s*/i, '')
+          .replace(/```$/i, '')
+          .trim()
+          .replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
         const parsed = JSON.parse(cleaned);
         res.status(200).json(parsed);
       } catch {
