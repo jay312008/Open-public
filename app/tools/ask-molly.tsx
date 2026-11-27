@@ -64,12 +64,21 @@ export default function AskMollyScreen() {
     });
   };
 
+  const scrollRef = React.useRef<React.ComponentRef<typeof ScrollView>>(null);
+
   useEffect(() => {
     if (initialQuestion) {
       sendMessage(initialQuestion);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuestion]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [messages.length, loading]);
 
   return (
     <AppBackground>
@@ -79,7 +88,11 @@ export default function AskMollyScreen() {
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <ScrollView contentContainerStyle={styles.chatScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            ref={scrollRef}
+            contentContainerStyle={styles.chatScroll}
+            showsVerticalScrollIndicator={false}
+          >
             {messages.map((msg) => {
               const isUser = msg.role === 'user';
               return (

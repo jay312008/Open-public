@@ -37,7 +37,19 @@ export async function askMollyAI(
     return { data: remote, source: 'live-gateway' };
   }
 
-  const q = question.toLowerCase();
+  const q = question.toLowerCase().trim();
+  const isGreeting =
+    /^(hi|hey|hello|yo|sup|hiya|good morning|good afternoon|good evening|how are you|what'?s up)[!.,?\s]*$/.test(
+      q
+    );
+  if (isGreeting) {
+    return {
+      source: 'local-prototype',
+      data: {
+        text: "Hey there! 👋 I'm Molly, your study buddy. What are we working on today?\n\nYou can ask me about Quadratic Equations, Chemical Bonding, Newton's Laws, Photosynthesis, or exam study tips.\n\n(Local prototype mode — connect your server-side AI gateway for live NVIDIA AI answers.)",
+      },
+    };
+  }
   if (q.includes('quadratic')) {
     return {
       source: 'local-prototype',
@@ -60,15 +72,32 @@ export async function askMollyAI(
     return {
       source: 'local-prototype',
       data: {
-        text: "Newton's Second Law states that the net force acting on an object equals its mass multiplied by its acceleration. If you double the net force on the same mass, the acceleration doubles.",
+        text: "Newton's Laws of Motion:\n1. Inertia — objects stay at rest or in uniform motion unless acted on by a net force.\n2. F = m × a — acceleration increases with net force and decreases with mass.\n3. Action–Reaction — every force has an equal and opposite reaction force.",
         equation: 'F = m × a   (Newtons = kg · m/s²)',
+      },
+    };
+  }
+  if (q.includes('photosynthesis') || q.includes('biology') || q.includes('cell')) {
+    return {
+      source: 'local-prototype',
+      data: {
+        text: 'Photosynthesis happens inside plant chloroplasts: chlorophyll absorbs sunlight to turn carbon dioxide and water into glucose (chemical energy) and oxygen.',
+        equation: '6CO₂ + 6H₂O + light → C₆H₁₂O₆ + 6O₂',
+      },
+    };
+  }
+  if (q.includes('exam') || q.includes('prepare') || q.includes('study plan') || q.includes('jamb') || q.includes('waec')) {
+    return {
+      source: 'local-prototype',
+      data: {
+        text: 'Best way to prepare for exams:\n1. Open the Journey tab and generate a roadmap with your real exam date.\n2. Study in focused 25-minute blocks and test yourself with Quiz Generator right after.\n3. Spend extra time on weak topics flagged in Progress & Exam Predictor.',
       },
     };
   }
   return {
     source: 'local-prototype',
     data: {
-      text: `Great question about "${question}"! Here is a structured breakdown:\n1. Identify the core concept and given values.\n2. Connect it to the main rule or formula for ${subject ?? 'this topic'}.\n3. Test your understanding with a short practice problem.\n\n(Prototype response — connect EXPO_PUBLIC_AI_GATEWAY_URL for live AI tutoring.)`,
+      text: `I'm currently in local prototype mode, so I can give full breakdowns on topics like Quadratic Equations, Chemical Bonding, Newton's Laws, Photosynthesis, and Exam Prep.\n\nFor live AI answers to "${question}", deploy the server-side NVIDIA AI gateway in supabase/functions/ai-gateway and set EXPO_PUBLIC_AI_GATEWAY_URL.`,
     },
   };
 }
