@@ -70,6 +70,95 @@ export interface MollyChatReply {
   widgets?: ChatWidgetSpec[];
 }
 
+function sanitizeMollyReply(raw: MollyChatReply): MollyChatReply {
+  let out: MollyChatReply = { ...raw };
+  const t = (out.text ?? '').trim();
+  // Defense-in-depth: if text ever looks like raw JSON, unpack it cleanly so code never shows in UI
+  if (t.startsWith('{') && (t.includes('"heading"') || t.includes('"text"'))) {
+    try {
+      const parsed = JSON.parse(t.replace(/\\(?!["\\/bfnrtu])/g, '\\\\')) as Partial<MollyChatReply>;
+      if (parsed.text || parsed.heading) {
+        out = {
+          ...out,
+          ...parsed,
+          text: parsed.text ?? parsed.heading ?? out.text,
+        };
+      }
+    } catch {
+      const m = t.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+      if (m && m[1]) {
+        out.text = m[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+      }
+    }
+  }
+  const cleanStr = (s?: string) =>
+    s
+      ?.replace(/\\text\{([^}]+)\}/g, '$1')
+      .replace(/\\neq/g, '≠')
+      .replace(/\\Delta/g, 'Δ')
+      .replace(/\\Omega/g, 'Ω')
+      .replace(/\\pi/g, 'π')
+      .replace(/\\pm/g, '±')
+      .replace(/\$/g, '')
+      .trim();
+
+  return {
+    ...out,
+    heading: cleanStr(out.heading),
+    text: cleanStr(out.text) ?? '',
+    equation: cleanStr(out.equation),
+    example: cleanStr(out.example),
+    tip: cleanStr(out.tip),
+    steps: out.steps?.map((st) => ({
+      title: cleanStr(st.title) ?? st.title,
+      detail: cleanStr(st.detail) ?? st.detail,
+    })),
+  };
+}
+
+export interface GeneratedTimetableSlot {
+  day: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
+  timeRange: string;
+  subjectName: string;
+  topic: string;
+  priority?: 'weak_point' | 'core' | 'revision';
+}
+
+export async function generateAITimetableAPI(input: {
+  examDate: string;
+  subjects: string[];
+  educationLevel: string;
+  weakTopics: string[];
+  recentActivity: string[];
+}): Promise<AIResponse<GeneratedTimetableSlot[]>> {
+  if (isLiveAIGatewayConfigured) {
+    const remote = await postToGatewayDetailed<{ slots?: GeneratedTimetableSlot[] }>(
+      '/timetable',
+      input
+    );
+    if (remote.data?.slots && Array.isArray(remote.data.slots) && remote.data.slots.length > 0) {
+      return { data: remote.data.slots, source: 'live-gateway' };
+    }
+  }
+
+  const days: GeneratedTimetableSlot['day'][] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const subs = input.subjects.length ? input.subjects : ['Mathematics', 'Physics'];
+  const fallback: GeneratedTimetableSlot[] = days.slice(0, 6).map((d, idx) => {
+    const sub = subs[idx % subs.length];
+    const weak = input.weakTopics[idx];
+    return {
+      day: d,
+      timeRange: idx >= 4 ? '120 min' : '90 min',
+      subjectName: sub,
+      topic: weak
+        ? `Target weak point: ${weak}`
+        : `Review core ${input.educationLevel} ${sub} syllabus & exam problems`,
+      priority: weak ? 'weak_point' : 'core',
+    };
+  });
+  return { data: fallback, source: 'local-prototype' };
+}
+
 export async function askMollyAI(
   question: string,
   subject?: string,
@@ -82,7 +171,7 @@ export async function askMollyAI(
       learningContext,
     });
     if (remote.data && remote.data.text) {
-      return { data: remote.data, source: 'live-gateway' };
+      return { data: sanitizeMollyReply(remote.data), source: 'live-gateway' };
     }
     if (remote.error) {
       return {

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AppBackground } from '@/components/AppBackground';
@@ -8,21 +8,85 @@ import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
 import { TimetableSlot } from '@/types/models';
+import { generateAITimetableAPI } from '@/lib/aiGateway';
 
 const DAYS: TimetableSlot['day'][] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function TimetableScreen() {
   const { colors } = useTheme();
-  const { timetableSlots, addTimetableSlot, toggleTimetableSlot, deleteTimetableSlot, journeyPlan } =
-    useApp();
+  const {
+    profile,
+    subjects,
+    learningMemory,
+    activityLog,
+    timetableSlots,
+    addTimetableSlot,
+    replaceTimetableSlots,
+    toggleTimetableSlot,
+    deleteTimetableSlot,
+    journeyPlan,
+  } = useApp();
+
+  // AI Smart Timetable Generator state (exam date + multi-subject selection)
+  const [examDate, setExamDate] = useState(journeyPlan?.examDate ?? '2026-12-01');
+  const [selectedSubjectNames, setSelectedSubjectNames] = useState<string[]>(['Physics', 'Mathematics']);
+  const [generatingAI, setGeneratingAI] = useState(false);
 
   const [selectedDay, setSelectedDay] = useState<TimetableSlot['day'] | 'All'>('All');
   const [showForm, setShowForm] = useState(false);
   const [day, setDay] = useState<TimetableSlot['day']>('Mon');
-  const [timeRange, setTimeRange] = useState('16:00 – 17:00');
-  const [subjectName, setSubjectName] = useState('Mathematics');
+  const [timeRange, setTimeRange] = useState('90 min');
+  const [subjectName, setSubjectName] = useState('Physics');
   const [topic, setTopic] = useState('');
   const [reminderEnabled, setReminderEnabled] = useState(true);
+
+  const uniqueSubjectNames = useMemo(() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const s of subjects) {
+      if (!seen.has(s.name)) {
+        seen.add(s.name);
+        list.push(s.name);
+      }
+    }
+    return list.slice(0, 18);
+  }, [subjects]);
+
+  const toggleSubjectPick = (name: string) => {
+    setSelectedSubjectNames((prev) =>
+      prev.includes(name) ? (prev.length > 1 ? prev.filter((x) => x !== name) : prev) : [...prev, name]
+    );
+  };
+
+  const handleGenerateAITimetable = async () => {
+    if (generatingAI || selectedSubjectNames.length === 0) return;
+    setGeneratingAI(true);
+    try {
+      const res = await generateAITimetableAPI({
+        examDate: examDate.trim() || '2026-12-01',
+        subjects: selectedSubjectNames,
+        educationLevel: profile.educationLevel,
+        weakTopics: learningMemory.weakTopics,
+        recentActivity: activityLog,
+      });
+      const built: TimetableSlot[] = res.data.map((slot, idx) => ({
+        id: `ai-tt-${Date.now()}-${idx}`,
+        day: DAYS.includes(slot.day) ? slot.day : DAYS[idx % DAYS.length],
+        timeRange: slot.timeRange || '90 min',
+        subjectName: slot.subjectName || selectedSubjectNames[0],
+        topic: slot.topic,
+        reminderEnabled: true,
+        completed: false,
+      }));
+      replaceTimetableSlots(built);
+      Alert.alert(
+        'AI Study Timetable Ready!',
+        `Generated ${built.length} personalized sessions targeting your ${profile.educationLevel} syllabus & weak points up to ${examDate}.`
+      );
+    } finally {
+      setGeneratingAI(false);
+    }
+  };
 
   const visibleSlots = useMemo(() => {
     if (selectedDay === 'All') return timetableSlots;
@@ -35,7 +99,7 @@ export default function TimetableScreen() {
     if (!subjectName.trim() || !topic.trim()) return;
     addTimetableSlot({
       day,
-      timeRange: timeRange.trim() || '16:00 – 17:00',
+      timeRange: timeRange.trim() || '90 min',
       subjectName: subjectName.trim(),
       topic: topic.trim(),
       reminderEnabled,
@@ -47,18 +111,78 @@ export default function TimetableScreen() {
   return (
     <AppBackground>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <BrandHeader showBack title="Study Timetable" />
+        <BrandHeader showBack title="AI Study Timetable" />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {/* Exam Countdown & Summary Banner */}
-          <View style={[styles.banner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={[styles.bannerTitle, { color: colors.text }]}>
-                {journeyPlan ? `${journeyPlan.examType} Exam Target` : 'Weekly Study Schedule'}
+          {/* AI Smart Timetable Generator Card */}
+          <View style={[styles.aiCard, { backgroundColor: colors.surface, borderColor: colors.purple }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="sparkles" size={20} color={colors.purple} />
+              <Text style={[styles.bannerTitle, { color: colors.text }]}>AI Exam Timetable Generator</Text>
+            </View>
+            <Text style={[styles.bannerSub, { color: colors.textSecondary }]}>
+              Molly uses your {profile.educationLevel} level, {learningMemory.weakTopics.length} weak topics, and{' '}
+              {activityLog.length} tracked study activities to build a custom daily plan.
+            </Text>
+
+            <View style={{ gap: 6 }}>
+              <Text style={{ color: colors.text, fontSize: 12.5, fontWeight: '800' }}>Exam Date</Text>
+              <TextInput
+                value={examDate}
+                onChangeText={setExamDate}
+                placeholder="e.g. 2026-12-01"
+                placeholderTextColor={colors.textMuted}
+                style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}
+              />
+            </View>
+
+            <View style={{ gap: 6 }}>
+              <Text style={{ color: colors.text, fontSize: 12.5, fontWeight: '800' }}>
+                Select Subjects ({selectedSubjectNames.length} chosen)
               </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {uniqueSubjectNames.map((name) => {
+                  const picked = selectedSubjectNames.includes(name);
+                  return (
+                    <AnimatedPressable
+                      key={name}
+                      onPress={() => toggleSubjectPick(name)}
+                      style={[
+                        styles.subChip,
+                        {
+                          backgroundColor: picked ? colors.purple : colors.surfaceMuted,
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: picked ? '#FFFFFF' : colors.text, fontSize: 12, fontWeight: '700' }}>
+                        {name}
+                      </Text>
+                    </AnimatedPressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            <AnimatedPressable
+              onPress={handleGenerateAITimetable}
+              style={[styles.addBtn, { backgroundColor: colors.purple }]}
+            >
+              {generatingAI ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="calendar-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.addBtnText}>Generate AI Timetable</Text>
+                </>
+              )}
+            </AnimatedPressable>
+          </View>
+
+          {/* Progress Summary */}
+          <View style={[styles.banner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[styles.bannerTitle, { color: colors.text }]}>Today's Study Focus</Text>
               <Text style={[styles.bannerSub, { color: colors.textSecondary }]}>
-                {journeyPlan
-                  ? `Goal: ${journeyPlan.goalName} · Target Date: ${journeyPlan.examDate}`
-                  : 'Plan recurring weekly sessions and check off completed blocks.'}
+                Target Date: {examDate} · {timetableSlots.length} planned sessions
               </Text>
             </View>
             <View style={[styles.countBadge, { backgroundColor: colors.surfaceMint }]}>
@@ -93,15 +217,13 @@ export default function TimetableScreen() {
             })}
           </ScrollView>
 
-          {/* Add Slot Toggle */}
+          {/* Manual Add Slot Toggle */}
           <AnimatedPressable
             onPress={() => setShowForm((v) => !v)}
             style={[styles.addBtn, { backgroundColor: colors.coral }]}
           >
             <Ionicons name={showForm ? 'close' : 'add-circle-outline'} size={18} color="#FFFFFF" />
-            <Text style={styles.addBtnText}>
-              {showForm ? 'Cancel' : 'Add Study Slot'}
-            </Text>
+            <Text style={styles.addBtnText}>{showForm ? 'Cancel' : 'Add Manual Slot'}</Text>
           </AnimatedPressable>
 
           {showForm && (
@@ -128,7 +250,7 @@ export default function TimetableScreen() {
               <TextInput
                 value={timeRange}
                 onChangeText={setTimeRange}
-                placeholder="Time (e.g. 16:00 – 17:00)"
+                placeholder="Duration or time (e.g. 90 min)"
                 placeholderTextColor={colors.textMuted}
                 style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}
               />
@@ -142,23 +264,10 @@ export default function TimetableScreen() {
               <TextInput
                 value={topic}
                 onChangeText={setTopic}
-                placeholder="Topic to study (e.g. Organic Chemistry)"
+                placeholder="Topic to study (e.g. Thermodynamics & Heat Transfer)"
                 placeholderTextColor={colors.textMuted}
                 style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}
               />
-              <AnimatedPressable
-                onPress={() => setReminderEnabled((r) => !r)}
-                style={styles.remRow}
-              >
-                <Ionicons
-                  name={reminderEnabled ? 'notifications' : 'notifications-off-outline'}
-                  size={18}
-                  color={reminderEnabled ? colors.mintDark : colors.textMuted}
-                />
-                <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>
-                  Study reminder: {reminderEnabled ? 'On' : 'Off'}
-                </Text>
-              </AnimatedPressable>
               <AnimatedPressable
                 onPress={handleAdd}
                 style={[
@@ -180,61 +289,51 @@ export default function TimetableScreen() {
           )}
 
           {/* Slots List */}
-          {visibleSlots.length === 0 ? (
-            <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Ionicons name="calendar-outline" size={30} color={colors.textMuted} />
-              <Text style={[styles.slotTitle, { color: colors.text }]}>No sessions scheduled</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: 12.5, textAlign: 'center' }}>
-                Tap "Add Study Slot" above to plan your revision for this day.
-              </Text>
-            </View>
-          ) : (
-            visibleSlots.map((slot) => (
-              <View
-                key={slot.id}
-                style={[
-                  styles.slotCard,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: slot.completed ? colors.mintDark : colors.border,
-                  },
-                ]}
-              >
-                <AnimatedPressable onPress={() => toggleTimetableSlot(slot.id)} style={styles.checkBtn}>
-                  <Ionicons
-                    name={slot.completed ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={24}
-                    color={slot.completed ? colors.mintDark : colors.textMuted}
-                  />
-                </AnimatedPressable>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <View style={styles.slotMeta}>
-                    <View style={[styles.dayTag, { backgroundColor: colors.surfaceMint }]}>
-                      <Text style={{ color: colors.mintDark, fontWeight: '800', fontSize: 11 }}>{slot.day}</Text>
-                    </View>
-                    <Text style={{ color: colors.textMuted, fontSize: 12, fontWeight: '700' }}>{slot.timeRange}</Text>
-                    {slot.reminderEnabled && (
-                      <Ionicons name="notifications-outline" size={13} color={colors.coral} />
-                    )}
+          {visibleSlots.map((slot) => (
+            <View
+              key={slot.id}
+              style={[
+                styles.slotCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: slot.completed ? colors.mintDark : colors.border,
+                },
+              ]}
+            >
+              <AnimatedPressable onPress={() => toggleTimetableSlot(slot.id)} style={styles.checkBtn}>
+                <Ionicons
+                  name={slot.completed ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={24}
+                  color={slot.completed ? colors.mintDark : colors.textMuted}
+                />
+              </AnimatedPressable>
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={styles.slotMeta}>
+                  <View style={[styles.dayTag, { backgroundColor: colors.surfaceMint }]}>
+                    <Text style={{ color: colors.mintDark, fontWeight: '800', fontSize: 11 }}>{slot.day}</Text>
                   </View>
-                  <Text
-                    style={[
-                      styles.slotTitle,
-                      {
-                        color: colors.text,
-                        textDecorationLine: slot.completed ? 'line-through' : 'none',
-                      },
-                    ]}
-                  >
-                    {slot.subjectName} — {slot.topic}
+                  <Text style={{ color: colors.purple, fontSize: 12, fontWeight: '800' }}>{slot.subjectName}</Text>
+                  <Text style={{ color: colors.textMuted, fontSize: 11.5, fontWeight: '700', marginLeft: 'auto' }}>
+                    {slot.timeRange}
                   </Text>
                 </View>
-                <AnimatedPressable onPress={() => deleteTimetableSlot(slot.id)} style={{ padding: 6 }}>
-                  <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
-                </AnimatedPressable>
+                <Text
+                  style={[
+                    styles.slotTitle,
+                    {
+                      color: colors.text,
+                      textDecorationLine: slot.completed ? 'line-through' : 'none',
+                    },
+                  ]}
+                >
+                  {slot.topic}
+                </Text>
               </View>
-            ))
-          )}
+              <AnimatedPressable onPress={() => deleteTimetableSlot(slot.id)} style={{ padding: 6 }}>
+                <Ionicons name="trash-outline" size={18} color={colors.textMuted} />
+              </AnimatedPressable>
+            </View>
+          ))}
         </ScrollView>
       </SafeAreaView>
     </AppBackground>
@@ -244,10 +343,12 @@ export default function TimetableScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { paddingHorizontal: 18, paddingBottom: 40, gap: 12 },
+  aiCard: { borderRadius: 22, borderWidth: 1.5, padding: 16, gap: 10 },
+  subChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
   banner: {
     borderRadius: 20,
     borderWidth: 1,
-    padding: 16,
+    padding: 15,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -273,9 +374,7 @@ const styles = StyleSheet.create({
   miniDayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   miniDay: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
-  remRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   saveBtn: { paddingVertical: 12, borderRadius: 999, alignItems: 'center' },
-  empty: { borderRadius: 20, borderWidth: 1, padding: 28, alignItems: 'center', gap: 6 },
   slotCard: {
     borderRadius: 18,
     borderWidth: 1,
@@ -287,5 +386,5 @@ const styles = StyleSheet.create({
   checkBtn: { padding: 2 },
   slotMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dayTag: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
-  slotTitle: { fontSize: 14, fontWeight: '800' },
+  slotTitle: { fontSize: 13.5, fontWeight: '700', marginTop: 2 },
 });

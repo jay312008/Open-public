@@ -23,7 +23,11 @@ interface ChatMessage {
   content: string;
 }
 
-async function callNvidia(messages: ChatMessage[], maxTokens = 850): Promise<string> {
+async function callNvidia(
+  messages: ChatMessage[],
+  maxTokens = 850,
+  jsonMode = false
+): Promise<string> {
   const apiKey = process.env.NVIDIA_API_KEY;
   const model = process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-bolt-e4b';
 
@@ -31,19 +35,34 @@ async function callNvidia(messages: ChatMessage[], maxTokens = 850): Promise<str
     throw new Error('NVIDIA_API_KEY is not set in Vercel Environment Variables.');
   }
 
-  const res = await fetch(NVIDIA_BASE_URL, {
+  const makeBody = (useJsonMode: boolean) =>
+    JSON.stringify({
+      model,
+      messages,
+      temperature: 0.3,
+      max_tokens: maxTokens,
+      ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
+    });
+
+  let res = await fetch(NVIDIA_BASE_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.35,
-      max_tokens: maxTokens,
-    }),
+    body: makeBody(jsonMode),
   });
+
+  if (!res.ok && jsonMode && res.status === 400) {
+    res = await fetch(NVIDIA_BASE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: makeBody(false),
+    });
+  }
 
   if (!res.ok) {
     const errText = await res.text();
@@ -121,25 +140,39 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             content: userPrompt,
           },
         ],
-        1600
+        1600,
+        true
       );
 
       const cleanLatex = (s: unknown): unknown => {
         if (typeof s === 'string') {
           return s
+            .replace(/\\\\/g, '\\')
             .replace(/\\text\{([^}]+)\}/g, '$1')
+            .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
+            .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+            .replace(/\\neq/g, '≠')
+            .replace(/\\leq/g, '≤')
+            .replace(/\\geq/g, '≥')
+            .replace(/\\Delta/g, 'Δ')
             .replace(/\\Omega/g, 'Ω')
             .replace(/\\pi/g, 'π')
             .replace(/\\theta/g, 'θ')
+            .replace(/\\alpha/g, 'α')
+            .replace(/\\beta/g, 'β')
             .replace(/\\lambda/g, 'λ')
+            .replace(/\\infty/g, '∞')
             .replace(/\\times/g, '×')
             .replace(/\\cdot/g, '·')
             .replace(/\\pm/g, '±')
             .replace(/\\sin/g, 'sin')
             .replace(/\\cos/g, 'cos')
             .replace(/\\tan/g, 'tan')
-            .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
-            .replace(/\$/g, '');
+            .replace(/\^2\b/g, '²')
+            .replace(/\^3\b/g, '³')
+            .replace(/\$/g, '')
+            .replace(/\\n/g, '\n')
+            .trim();
         }
         if (Array.isArray(s)) return s.map(cleanLatex);
         if (s && typeof s === 'object') {
@@ -152,19 +185,53 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         return s;
       };
 
+      const extractField = (src: string, field: string): string | undefined => {
+        const m = src.match(new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 's'));
+        return m ? (cleanLatex(m[1].replace(/\\"/g, '"')) as string) : undefined;
+      };
+
       let parsed: Record<string, unknown> | null = null;
+      const cleanedRaw = reply
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/i, '')
+        .trim();
+      const firstBrace = cleanedRaw.indexOf('{');
+      const lastBrace = cleanedRaw.lastIndexOf('}');
+      const jsonSlice =
+        firstBrace >= 0 && lastBrace > firstBrace
+          ? cleanedRaw.slice(firstBrace, lastBrace + 1)
+          : cleanedRaw;
+
       try {
-        const cleaned = reply
-          .replace(/^```json\s*/i, '')
-          .replace(/```$/i, '')
-          .trim()
-          .replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
-        const firstBrace = cleaned.indexOf('{');
-        const lastBrace = cleaned.lastIndexOf('}');
-        const jsonSlice = firstBrace >= 0 && lastBrace > firstBrace ? cleaned.slice(firstBrace, lastBrace + 1) : cleaned;
-        parsed = cleanLatex(JSON.parse(jsonSlice)) as Record<string, unknown>;
+        const repaired = jsonSlice
+          .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+          .replace(/,\s*([}\]])/g, '$1');
+        parsed = cleanLatex(JSON.parse(repaired)) as Record<string, unknown>;
       } catch {
-        parsed = { text: cleanLatex(reply) };
+        // Fallback: extract clean plain-English fields even if JSON was truncated or had unescaped quotes.
+        // NEVER dump raw JSON braces/keys to the student!
+        const heading = extractField(cleanedRaw, 'heading');
+        const text = extractField(cleanedRaw, 'text');
+        const equation = extractField(cleanedRaw, 'equation');
+        const example = extractField(cleanedRaw, 'example');
+        const tip = extractField(cleanedRaw, 'tip');
+        if (text || heading) {
+          parsed = {
+            ...(heading ? { heading } : {}),
+            text: text ?? heading ?? 'Here is your explanation.',
+            ...(equation ? { equation } : {}),
+            ...(example ? { example } : {}),
+            ...(tip ? { tip } : {}),
+          };
+        } else {
+          // Strip any stray JSON scaffolding if model emitted partial JSON
+          const plain = String(cleanLatex(cleanedRaw))
+            .replace(/^\{|\}$/g, '')
+            .replace(/"[a-zA-Z_]+"\s*:\s*/g, '')
+            .replace(/^\s*"|"\s*,?$/gm, '')
+            .trim();
+          parsed = { text: plain || 'Let me explain that step by step.' };
+        }
       }
 
       // If the user explicitly asked to graph/plot an equation, guarantee a dynamic function_plot for THAT exact equation
@@ -260,6 +327,39 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       );
       const cleaned = reply.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
       res.status(200).json(JSON.parse(cleaned));
+      return;
+    }
+
+    if (route === 'timetable') {
+      const examDate = String(body.examDate ?? 'Upcoming Exam');
+      const subjects = Array.isArray(body.subjects) ? body.subjects.map(String) : ['Mathematics', 'Physics'];
+      const educationLevel = String(body.educationLevel ?? 'O-Level');
+      const weakTopics = Array.isArray(body.weakTopics) ? body.weakTopics.map(String) : [];
+      const recentActivity = Array.isArray(body.recentActivity) ? body.recentActivity.map(String) : [];
+
+      const reply = await callNvidia(
+        [
+          {
+            role: 'system',
+            content:
+              'You are LearnyMol AI Study Planner. Return ONLY raw valid JSON (no markdown fences) with schema: { "slots": [{ "day": "Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun", "timeRange": string (e.g. "90 min" or "16:00 – 17:30"), "subjectName": string, "topic": string (specific exam-level topic action like "Study Thermodynamics and Heat Transfer" or "Review Classical Mechanics"), "priority": "weak_point"|"core"|"revision" }] }. Generate 6 to 10 realistic study slots across the week prioritizing weak topics first, matched strictly to the student education level and selected subjects.',
+          },
+          {
+            role: 'user',
+            content: `Exam Date: ${examDate}\nEducation Level: ${educationLevel}\nSelected Subjects: ${subjects.join(', ')}\nTracked Weak Topics: ${weakTopics.length ? weakTopics.join(', ') : 'None yet — cover core syllabus foundations'}\nRecent Student Activity: ${recentActivity.length ? recentActivity.slice(0, 12).join('; ') : 'New study plan'}`,
+          },
+        ],
+        1400,
+        true
+      );
+
+      const cleaned = reply
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/i, '')
+        .trim()
+        .replace(/,\s*([}\]])/g, '$1');
+      const parsed = JSON.parse(cleaned);
+      res.status(200).json(parsed);
       return;
     }
 

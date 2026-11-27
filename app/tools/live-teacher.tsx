@@ -20,6 +20,7 @@ import { CompanionAvatar } from '@/components/CompanionAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
 import { askMollyAI, generateLiveLessonSteps, isLiveAIGatewayConfigured } from '@/lib/aiGateway';
+import { ChatVisualWidget, ChatWidgetSpec } from '@/components/chat/ChatVisualWidget';
 import { LiveBoardElement, LiveLessonStep } from '@/types/models';
 
 type BoardSurfaceId = 'white' | 'dark' | 'blue' | 'cream' | 'mint';
@@ -41,6 +42,7 @@ interface SemanticBoardCard {
   label: string;
   content: string;
   explanation: string;
+  widgets?: ChatWidgetSpec[];
 }
 
 const BOARD_SURFACES: {
@@ -207,27 +209,9 @@ export default function LiveTeacherScreen() {
     };
   }, []);
 
-  // Let Molly draw a synchronized illustrative vector diagram on the canvas for step 2/3
-  const addMollySketchForStep = (stepIdx: number, topicName: string) => {
-    if (stepIdx !== 1) return;
-    const accent = surface.isDarkSurface ? '#C084FC' : '#7C3AED';
-    const axis = surface.isDarkSurface ? '#64748B' : '#94A3B8';
-    const isMath =
-      topicName.toLowerCase().includes('quadratic') ||
-      topicName.toLowerCase().includes('parabola') ||
-      topicName.toLowerCase().includes('math') ||
-      topicName.toLowerCase().includes('graph');
-
-    const sketchStrokes: CanvasStroke[] = isMath
-      ? [
-          { id: `molly-ax-${Date.now()}`, d: 'M 215 115 L 330 115 M 272 24 L 272 135', color: axis, width: 1.8, opacity: 0.85, author: 'molly' },
-          { id: `molly-curve-${Date.now()}`, d: 'M 225 32 Q 272 155 319 32', color: accent, width: 3.2, opacity: 0.95, author: 'molly' },
-        ]
-      : [
-          { id: `molly-hl-${Date.now()}`, d: 'M 225 85 C 255 55, 295 55, 325 85', color: accent, width: 3, opacity: 0.9, author: 'molly' },
-        ];
-    setStrokes((prev) => [...prev.filter((s) => s.author !== 'molly'), ...sketchStrokes]);
-  };
+  // Keep the freehand board clean by default — dynamic graphs, rulers, and diagrams
+  // are rendered from real AI widget specs instead of any hardcoded parabola!
+  const addMollySketchForStep = (_stepIdx: number, _topicName: string) => {};
 
   const speakStep = (stepList: LiveLessonStep[], idx: number, topicName: string) => {
     if (idx >= stepList.length) {
@@ -328,12 +312,24 @@ export default function LiveTeacherScreen() {
 
     try {
       const res = await askMollyAI(q, topic);
+      const formattedBody = [
+        res.data.text,
+        res.data.equation ? `Formula: ${res.data.equation}` : '',
+        res.data.steps?.length
+          ? res.data.steps.map((s, i) => `${i + 1}. ${s.title}: ${s.detail}`).join('\n')
+          : '',
+        res.data.example ? `Example: ${res.data.example}` : '',
+        res.data.tip ? `Tip: ${res.data.tip}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
       const ansCard: SemanticBoardCard = {
         id: `ans-${Date.now()}`,
         role: res.data.equation ? 'formula' : 'solution',
-        label: res.data.equation ? 'Molly · Formula & Answer' : 'Molly · Live Answer',
-        content: res.data.equation ? `${res.data.text}\n\n${res.data.equation}` : res.data.text,
+        label: res.data.heading ?? (res.data.equation ? 'Molly · Formula & Answer' : 'Molly · Live Answer'),
+        content: formattedBody,
         explanation: res.data.text,
+        widgets: res.data.widgets,
       };
       setBoardCards((prev) => [...prev, ansCard]);
       setTranscript((prev) => [...prev, `You: ${q}`, `Molly: ${res.data.text}`]);
@@ -822,6 +818,13 @@ export default function LiveTeacherScreen() {
                       <Text style={[styles.semanticContent, { color: sem.textColor }]}>
                         {card.content}
                       </Text>
+                      {card.widgets && card.widgets.length > 0 && (
+                        <View style={{ marginTop: 10, gap: 8 }}>
+                          {card.widgets.map((w, wIdx) => (
+                            <ChatVisualWidget key={`${card.id}-w-${wIdx}`} widget={w} />
+                          ))}
+                        </View>
+                      )}
                     </AnimatedPressable>
                   );
                 })

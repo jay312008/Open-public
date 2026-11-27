@@ -13,10 +13,11 @@ import { getCompanionById, HomeCardAssets } from '@/constants/assets';
 
 export default function HomeScreen() {
   const { colors, isDark } = useTheme();
-  const { profile, journeyPlan, subjects, completedLessonIds, notifications } = useApp();
+  const { profile, journeyPlan, subjects, completedLessonIds, notifications, timetableSlots } = useApp();
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
   const router = useRouter();
   const [question, setQuestion] = useState('');
+  const [focusExpanded, setFocusExpanded] = useState(false);
 
   const companion = getCompanionById(profile.companionId);
   const firstName = profile.displayName.split(' ')[0];
@@ -414,6 +415,89 @@ export default function HomeScreen() {
               </View>
             </AnimatedPressable>
           )}
+
+          {/* Today's Study Focus — AI Study Timetable Preview (matches user's previous LearnyMol workflow) */}
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderWidth: 1,
+              borderRadius: 22,
+              padding: 15,
+              gap: 10,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="radio-button-on" size={18} color={colors.purple} />
+                <Text style={{ color: colors.text, fontSize: 15.5, fontWeight: '900' }}>
+                  Today's Study Focus
+                </Text>
+              </View>
+              <AnimatedPressable onPress={() => setFocusExpanded((v) => !v)}>
+                <Text style={{ color: colors.purple, fontSize: 12.5, fontWeight: '800' }}>
+                  {focusExpanded ? 'Less ▲' : 'More ▼'}
+                </Text>
+              </AnimatedPressable>
+            </View>
+
+            {(focusExpanded ? timetableSlots : timetableSlots.slice(0, 2)).map((slot) => (
+              <AnimatedPressable
+                key={slot.id}
+                onPress={() => router.push('/timetable' as never)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                  backgroundColor: colors.surfaceMuted,
+                  borderRadius: 14,
+                  padding: 11,
+                }}
+              >
+                <View
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    backgroundColor: colors.surfacePurpleSoft,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="book-outline" size={17} color={colors.purple} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.purple, fontSize: 12, fontWeight: '800' }}>
+                    {slot.day} · {slot.subjectName}
+                  </Text>
+                  <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }} numberOfLines={2}>
+                    {slot.topic}
+                  </Text>
+                </View>
+                <Text style={{ color: colors.textMuted, fontSize: 11.5, fontWeight: '700' }}>
+                  {slot.timeRange}
+                </Text>
+              </AnimatedPressable>
+            ))}
+
+            <AnimatedPressable
+              onPress={() => router.push('/timetable' as never)}
+              style={{
+                backgroundColor: colors.surfaceMint,
+                borderRadius: 999,
+                paddingVertical: 10,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: 6,
+              }}
+            >
+              <Ionicons name="sparkles-outline" size={15} color={colors.mintDark} />
+              <Text style={{ color: colors.mintDark, fontSize: 12.5, fontWeight: '800' }}>
+                Generate / Edit AI Study Timetable
+              </Text>
+            </AnimatedPressable>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </AppBackground>

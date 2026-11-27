@@ -70,7 +70,7 @@ export default function AskMollyScreen() {
   }>();
   const seedPrompt = initialQuestion ?? prompt;
   const { colors, isDark } = useTheme();
-  const { profile, saveConversation, learningMemory, consumeCredits } = useApp();
+  const { profile, saveConversation, learningMemory, consumeCredits, logStudyActivity } = useApp();
   const companion = getCompanionById(profile.companionId);
   const firstName = profile.displayName.split(' ')[0];
 
@@ -105,6 +105,7 @@ export default function AskMollyScreen() {
     setInput('');
     setLoading(true);
 
+    logStudyActivity(`Asked Molly: ${clean.slice(0, 60)}`);
     consumeCredits(1, `Ask Molly: ${clean.slice(0, 32)}`, 'ai-chat');
     const memContext = learningMemory.shareContextWithAI
       ? `Education level: ${profile.educationLevel}.${

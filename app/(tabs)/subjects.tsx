@@ -95,7 +95,7 @@ function getSubjectVisual(subjectId: string, subjectName = ''): {
 
 export default function SubjectsScreen() {
   const { colors, isDark } = useTheme();
-  const { subjects, completedLessonIds, addCustomTopic } = useApp();
+  const { subjects, completedLessonIds, addCustomTopic, logStudyActivity } = useApp();
   const router = useRouter();
 
   const [levelFilter, setLevelFilter] = useState<(typeof LEVEL_FILTERS)[number]>('All Subjects');
@@ -207,7 +207,10 @@ export default function SubjectsScreen() {
                 return (
                   <AnimatedPressable
                     key={sub.id}
-                    onPress={() => setSelectedSubjectId(sub.id)}
+                    onPress={() => {
+                      logStudyActivity(`Studied ${sub.name} (${sub.level})`);
+                      setSelectedSubjectId(sub.id);
+                    }}
                     scaleTo={0.98}
                     style={[
                       styles.subjectCard,

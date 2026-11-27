@@ -50,6 +50,7 @@ interface PersistedState {
   timetableSlots: TimetableSlot[];
   quizHistory: QuizAttemptRecord[];
   creditTransactions: CreditTransactionItem[];
+  activityLog: string[];
 }
 
 const DEFAULT_CREDITS = Number(process.env.EXPO_PUBLIC_DEFAULT_TEST_CREDITS ?? 250);
@@ -161,6 +162,7 @@ const INITIAL_STATE: PersistedState = {
       createdAt: 'Initial balance',
     },
   ],
+  activityLog: [],
 };
 
 export interface CreatePlanInput {
@@ -204,6 +206,7 @@ interface AppContextValue {
   timetableSlots: TimetableSlot[];
   quizHistory: QuizAttemptRecord[];
   creditTransactions: CreditTransactionItem[];
+  activityLog: string[];
 
   // Profile & Settings
   updateProfile: (patch: Partial<StudentProfile>) => void;
@@ -217,12 +220,14 @@ interface AppContextValue {
   ) => boolean;
   grantTestCredits: (amount: number, reason?: string) => void;
   updateLearningMemory: (patch: Partial<LearningMemorySettings>) => void;
+  logStudyActivity: (entry: string) => void;
 
   // Subjects & Custom Topics
   addCustomTopic: (subjectId: string, title: string, description: string) => void;
 
   // Timetable
   addTimetableSlot: (slot: Omit<TimetableSlot, 'id' | 'completed'>) => void;
+  replaceTimetableSlots: (slots: TimetableSlot[]) => void;
   toggleTimetableSlot: (slotId: string) => void;
   deleteTimetableSlot: (slotId: string) => void;
 
@@ -453,6 +458,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [updateState]
   );
 
+  const logStudyActivity = useCallback(
+    (entry: string) => {
+      const clean = entry.trim();
+      if (!clean) return;
+      updateState((prev) => ({
+        ...prev,
+        activityLog: [clean, ...(prev.activityLog ?? [])].slice(0, 120),
+      }));
+    },
+    [updateState]
+  );
+
   const addTimetableSlot = useCallback(
     (slot: Omit<TimetableSlot, 'id' | 'completed'>) => {
       updateState((prev) => ({
@@ -461,6 +478,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ...(prev.timetableSlots ?? []),
           { ...slot, id: `tt-${Date.now()}`, completed: false },
         ],
+      }));
+    },
+    [updateState]
+  );
+
+  const replaceTimetableSlots = useCallback(
+    (slots: TimetableSlot[]) => {
+      updateState((prev) => ({
+        ...prev,
+        timetableSlots: slots,
       }));
     },
     [updateState]
@@ -1040,6 +1067,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       timetableSlots: state.timetableSlots ?? INITIAL_TIMETABLE,
       quizHistory: state.quizHistory ?? [],
       creditTransactions: state.creditTransactions ?? [],
+      activityLog: state.activityLog ?? [],
       updateProfile,
       setCompanion,
       updateNotificationPrefs,
@@ -1047,8 +1075,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       consumeCredits,
       grantTestCredits,
       updateLearningMemory,
+      logStudyActivity,
       addCustomTopic,
       addTimetableSlot,
+      replaceTimetableSlots,
       toggleTimetableSlot,
       deleteTimetableSlot,
       generateJourneyPlan,
@@ -1076,8 +1106,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       consumeCredits,
       grantTestCredits,
       updateLearningMemory,
+      logStudyActivity,
       addCustomTopic,
       addTimetableSlot,
+      replaceTimetableSlots,
       toggleTimetableSlot,
       deleteTimetableSlot,
       generateJourneyPlan,
