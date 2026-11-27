@@ -25,7 +25,7 @@ interface ChatMessage {
 
 async function callNvidia(messages: ChatMessage[], maxTokens = 850): Promise<string> {
   const apiKey = process.env.NVIDIA_API_KEY;
-  const model = process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct';
+  const model = process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-bolt-e4b';
 
   if (!apiKey) {
     throw new Error('NVIDIA_API_KEY is not set in Vercel Environment Variables.');
@@ -80,7 +80,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       ok: true,
       hasApiKey: Boolean(process.env.NVIDIA_API_KEY),
       hasSupabase,
-      model: process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct',
+      model: process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-bolt-e4b',
     });
     return;
   }

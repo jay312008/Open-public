@@ -24,7 +24,7 @@ async function callNvidiaNim(messages: ChatMessage[], maxTokens = 700): Promise<
   const model =
     (globalThis as { Deno?: { env: { get: (k: string) => string | undefined } } }).Deno?.env.get(
       'NVIDIA_MODEL'
-    ) ?? 'meta/llama-3.1-70b-instruct';
+    ) ?? 'nvidia/nemotron-3.5-bolt-e4b';
 
   if (!apiKey) {
     throw new Error('Server secret NVIDIA_API_KEY is not configured.');
