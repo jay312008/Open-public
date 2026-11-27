@@ -96,17 +96,35 @@ export function BlobTabBar({ state, navigateToTab }: BottomTabBarProps) {
           },
         ]}
       >
-        {tabWidth > 0 && (
-          <Animated.View
+        {Platform.OS === 'web' ? (
+          <View
             pointerEvents="none"
             style={[
               styles.blobContainer,
-              { width: Math.max(tabWidth - 10, 0) },
-              blobStyle,
+              {
+                width: `${100 / tabCount}%` as any,
+                left: `${(state.index * 100) / tabCount}%` as any,
+                paddingHorizontal: 5,
+                // @ts-ignore web-only smooth transition
+                transition: reducedMotion ? 'none' : 'left 260ms cubic-bezier(0.34, 1.35, 0.64, 1)',
+              },
             ]}
           >
             <View style={[styles.blobShape, { backgroundColor: colors.navBlob }]} />
-          </Animated.View>
+          </View>
+        ) : (
+          tabWidth > 0 && (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.blobContainer,
+                { width: Math.max(tabWidth - 10, 0), left: 5 },
+                blobStyle,
+              ]}
+            >
+              <View style={[styles.blobShape, { backgroundColor: colors.navBlob }]} />
+            </Animated.View>
+          )
         )}
 
         {state.routes.map((route, index) => {

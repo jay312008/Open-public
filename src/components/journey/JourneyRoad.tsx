@@ -47,7 +47,9 @@ export function JourneyRoad({
 }: JourneyRoadProps) {
   const { width: screenWidth } = useWindowDimensions();
   const { colors, isDark } = useTheme();
-  const canvasWidth = Math.max(280, Math.min(screenWidth - 32, 460));
+  const [measuredWidth, setMeasuredWidth] = React.useState(0);
+  const canvasWidth =
+    measuredWidth > 0 ? measuredWidth : Math.max(280, Math.min(screenWidth - 32, 358));
 
   const isEmpty = levels.length === 0;
   const displayCount = isEmpty ? 3 : levels.length;
@@ -96,8 +98,19 @@ export function JourneyRoad({
       : 0;
 
   return (
-    <View style={[styles.container, { width: canvasWidth, height: totalHeight }]}>
-      <Svg width={canvasWidth} height={totalHeight} style={StyleSheet.absoluteFill}>
+    <View
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0 && Math.abs(w - measuredWidth) > 1) setMeasuredWidth(w);
+      }}
+      style={[styles.container, { width: '100%', maxWidth: 460, height: totalHeight }]}
+    >
+      <Svg
+        width="100%"
+        height={totalHeight}
+        viewBox={`0 0 ${canvasWidth} ${totalHeight}`}
+        style={StyleSheet.absoluteFill}
+      >
         <Defs>
           <LinearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0%" stopColor={colors.skyTop} />

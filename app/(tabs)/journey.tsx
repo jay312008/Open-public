@@ -23,20 +23,22 @@ export default function JourneyScreen() {
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<number>(0);
+  const [viewportWidth, setViewportWidth] = useState<number>(0);
   const [planModalOpen, setPlanModalOpen] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<JourneyLevelNode | null>(null);
   const [selectedBadge, setSelectedBadge] = useState<BadgeItem | null>(null);
 
+  const panelWidth = viewportWidth > 0 ? viewportWidth : width;
   const worldOffset = useSharedValue(0);
 
   useEffect(() => {
-    const target = -activeTab * width;
+    const target = -activeTab * panelWidth;
     if (reducedMotion) {
       worldOffset.value = target;
     } else {
       worldOffset.value = withSpring(target, { damping: 22, stiffness: 180 });
     }
-  }, [activeTab, width, reducedMotion, worldOffset]);
+  }, [activeTab, panelWidth, reducedMotion, worldOffset]);
 
   const worldStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: worldOffset.value }],
@@ -88,6 +90,7 @@ export default function JourneyScreen() {
         <View style={styles.tabsRow}>
           {SECTIONS.map((label, idx) => {
             const active = activeTab === idx;
+            const flexWeight = idx === 1 ? 0.78 : idx === 3 ? 1.35 : 1;
             return (
               <AnimatedPressable
                 key={label}
@@ -95,6 +98,7 @@ export default function JourneyScreen() {
                 style={[
                   styles.tabPill,
                   {
+                    flex: flexWeight,
                     backgroundColor: active ? colors.coral : colors.surface,
                     borderColor: active ? colors.coral : colors.border,
                   },
@@ -115,10 +119,16 @@ export default function JourneyScreen() {
         </View>
 
         {/* Horizontally Connected World Viewport */}
-        <View style={styles.viewport}>
-          <Animated.View style={[styles.worldStrip, { width: width * 4 }, worldStyle]}>
+        <View
+          style={styles.viewport}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0 && Math.abs(w - viewportWidth) > 0.5) setViewportWidth(w);
+          }}
+        >
+          <Animated.View style={[styles.worldStrip, { width: panelWidth * 4 }, worldStyle]}>
             {/* PANEL 0: JOURNEY ROAD */}
-            <View style={[styles.panel, { width }]}>
+            <View style={[styles.panel, { width: panelWidth }]}>
               <ScrollView
                 contentContainerStyle={styles.panelScroll}
                 showsVerticalScrollIndicator={false}
@@ -156,7 +166,7 @@ export default function JourneyScreen() {
             </View>
 
             {/* PANEL 1: STUDY PLAN (matches pasted.png reference) */}
-            <View style={[styles.panel, { width }]}>
+            <View style={[styles.panel, { width: panelWidth }]}>
               <ScrollView
                 contentContainerStyle={styles.panelScroll}
                 showsVerticalScrollIndicator={false}
@@ -377,7 +387,7 @@ export default function JourneyScreen() {
             </View>
 
             {/* PANEL 2: LEARNING PROGRESS */}
-            <View style={[styles.panel, { width }]}>
+            <View style={[styles.panel, { width: panelWidth }]}>
               <ScrollView
                 contentContainerStyle={styles.panelScroll}
                 showsVerticalScrollIndicator={false}
@@ -467,7 +477,7 @@ export default function JourneyScreen() {
             </View>
 
             {/* PANEL 3: ACHIEVEMENTS */}
-            <View style={[styles.panel, { width }]}>
+            <View style={[styles.panel, { width: panelWidth }]}>
               <ScrollView
                 contentContainerStyle={styles.panelScroll}
                 showsVerticalScrollIndicator={false}
