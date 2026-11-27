@@ -17,6 +17,8 @@ export default function LiveTeacherScreen() {
   const { profile, saveConversation } = useApp();
 
   const [topic, setTopic] = useState('Quadratic Equations');
+  const [boardSurface, setBoardSurface] = useState<'chalkboard' | 'whiteboard' | 'cream'>('chalkboard');
+  const [loadingPlan, setLoadingPlan] = useState(false);
   const [steps, setSteps] = useState<LiveLessonStep[]>([]);
   const [currentStepIdx, setCurrentStepIdx] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -24,6 +26,40 @@ export default function LiveTeacherScreen() {
   const [selectedElement, setSelectedElement] = useState<LiveBoardElement | null>(null);
   const [transcript, setTranscript] = useState<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const surfaceTheme =
+    boardSurface === 'whiteboard'
+      ? {
+          bg: '#FFFFFF',
+          border: '#E2E8F0',
+          header: '#16A34A',
+          hint: '#64748B',
+          itemBg: '#F8FAFC',
+          itemBorder: '#E2E8F0',
+          itemText: '#0F172A',
+          emptyText: '#475569',
+        }
+      : boardSurface === 'cream'
+      ? {
+          bg: '#FFF9EC',
+          border: '#EADBC0',
+          header: '#C25E28',
+          hint: '#8A7960',
+          itemBg: '#FFFDF8',
+          itemBorder: '#E7D8BE',
+          itemText: '#2A2218',
+          emptyText: '#6F614D',
+        }
+      : {
+          bg: '#16241E',
+          border: '#2E473B',
+          header: '#86E88A',
+          hint: '#98B4A3',
+          itemBg: '#1D3028',
+          itemBorder: '#2D483C',
+          itemText: '#FFFFFF',
+          emptyText: '#B7CFC0',
+        };
 
   useEffect(() => {
     return () => {
@@ -62,11 +98,16 @@ export default function LiveTeacherScreen() {
     if (timerRef.current) clearTimeout(timerRef.current);
     setSelectedElement(null);
     setTranscript([]);
-    const res = await generateLiveLessonSteps(topic.trim() || 'Quadratic Equations');
-    setSteps(res.data);
-    setIsPlaying(true);
-    setIsPaused(false);
-    speakStep(res.data, 0);
+    setLoadingPlan(true);
+    try {
+      const res = await generateLiveLessonSteps(topic.trim() || 'Quadratic Equations');
+      setSteps(res.data);
+      setIsPlaying(true);
+      setIsPaused(false);
+      speakStep(res.data, 0);
+    } finally {
+      setLoadingPlan(false);
+    }
   };
 
   const handlePauseOrInterrupt = () => {
@@ -117,11 +158,29 @@ export default function LiveTeacherScreen() {
         <BrandHeader showBack title="Molly Live Teacher" />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {/* Honest Provider Mode Indicator */}
-          <View style={[styles.modePill, { backgroundColor: colors.surfaceBlueSoft }]}>
-            <Ionicons name="radio" size={14} color={colors.blue} />
-            <Text style={[styles.modeText, { color: colors.blue }]}>
+          <View
+            style={[
+              styles.modePill,
+              {
+                backgroundColor: isLiveAIGatewayConfigured
+                  ? colors.surfaceMint
+                  : colors.surfaceBlueSoft,
+              },
+            ]}
+          >
+            <Ionicons
+              name="radio"
+              size={14}
+              color={isLiveAIGatewayConfigured ? colors.mintDark : colors.blue}
+            />
+            <Text
+              style={[
+                styles.modeText,
+                { color: isLiveAIGatewayConfigured ? colors.mintDark : colors.blue },
+              ]}
+            >
               {isLiveAIGatewayConfigured
-                ? 'Live AI Voice Gateway Connected'
+                ? 'Live AI Teaching Gateway Connected · Device Speech'
                 : 'Interactive Prototype · Device Speech Engine (Replaceable AI Provider)'}
             </Text>
           </View>
@@ -151,15 +210,58 @@ export default function LiveTeacherScreen() {
             </View>
           </View>
 
+          {/* Board Surface Selector (Spec Section 5) */}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(
+              [
+                { id: 'chalkboard', label: 'Chalkboard' },
+                { id: 'whiteboard', label: 'Whiteboard' },
+                { id: 'cream', label: 'Cream Paper' },
+              ] as const
+            ).map((opt) => {
+              const active = boardSurface === opt.id;
+              return (
+                <AnimatedPressable
+                  key={opt.id}
+                  onPress={() => setBoardSurface(opt.id)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 8,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    alignItems: 'center',
+                    backgroundColor: active ? colors.coral : colors.surface,
+                    borderColor: active ? colors.coral : colors.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '700',
+                      color: active ? '#FFFFFF' : colors.text,
+                    }}
+                  >
+                    {opt.label}
+                  </Text>
+                </AnimatedPressable>
+              );
+            })}
+          </View>
+
           {/* Controls */}
           <View style={styles.controlsRow}>
             <AnimatedPressable
               onPress={handleStartLesson}
+              disabled={loadingPlan}
               style={[styles.primaryBtn, { backgroundColor: colors.coral, flex: 1 }]}
             >
               <Ionicons name="play" size={18} color="#FFFFFF" />
               <Text style={styles.primaryBtnText}>
-                {steps.length > 0 ? 'Restart Lesson' : 'Start Live Lesson'}
+                {loadingPlan
+                  ? 'Preparing Lesson...'
+                  : steps.length > 0
+                  ? 'Restart Lesson'
+                  : 'Start Live Lesson'}
               </Text>
             </AnimatedPressable>
 
@@ -176,7 +278,7 @@ export default function LiveTeacherScreen() {
                 onPress={handleResume}
                 style={[styles.secondaryBtn, { backgroundColor: colors.surfaceMint, borderColor: colors.mint }]}
               >
-                <Ionicons name="play-forward" size={18} color={colors.mintDark} />
+                <Ionicons name="play-forward" size={17} color={colors.mintDark} />
                 <Text style={[styles.secondaryText, { color: colors.mintDark }]}>Resume</Text>
               </AnimatedPressable>
             ) : null}
@@ -196,18 +298,22 @@ export default function LiveTeacherScreen() {
           <View
             style={[
               styles.board,
-              { backgroundColor: '#16241E', borderColor: '#2E473B' },
+              { backgroundColor: surfaceTheme.bg, borderColor: surfaceTheme.border },
             ]}
           >
             <View style={styles.boardHeader}>
-              <Text style={styles.boardLabel}>INTERACTIVE TEACHING BOARD</Text>
-              <Text style={styles.boardHint}>Tap any element to re-explain</Text>
+              <Text style={[styles.boardLabel, { color: surfaceTheme.header }]}>
+                INTERACTIVE TEACHING BOARD
+              </Text>
+              <Text style={[styles.boardHint, { color: surfaceTheme.hint }]}>
+                Tap any element to re-explain
+              </Text>
             </View>
 
             {visibleSteps.length === 0 ? (
               <View style={styles.boardEmpty}>
-                <Ionicons name="easel-outline" size={34} color="#86E88A" />
-                <Text style={styles.boardEmptyText}>
+                <Ionicons name="easel-outline" size={34} color={surfaceTheme.header} />
+                <Text style={[styles.boardEmptyText, { color: surfaceTheme.emptyText }]}>
                   Tap “Start Live Lesson” to watch Molly write equations and explain step by step.
                 </Text>
               </View>
@@ -221,11 +327,18 @@ export default function LiveTeacherScreen() {
                       onPress={() => handleTapBoardElement(s.boardElement)}
                       style={[
                         styles.boardItem,
-                        active && { borderColor: '#FF7557', backgroundColor: '#22382E' },
+                        {
+                          backgroundColor: surfaceTheme.itemBg,
+                          borderColor: active ? '#FF7557' : surfaceTheme.itemBorder,
+                        },
                       ]}
                     >
-                      <Text style={styles.boardItemLabel}>{s.boardElement.label}</Text>
-                      <Text style={styles.boardItemContent}>{s.boardElement.content}</Text>
+                      <Text style={[styles.boardItemLabel, { color: surfaceTheme.header }]}>
+                        {s.boardElement.label}
+                      </Text>
+                      <Text style={[styles.boardItemContent, { color: surfaceTheme.itemText }]}>
+                        {s.boardElement.content}
+                      </Text>
                     </AnimatedPressable>
                   );
                 })}

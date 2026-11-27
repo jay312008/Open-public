@@ -124,6 +124,53 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       return;
     }
 
+    if (route === 'exam-predictor') {
+      const examType = String(body.examType ?? 'WAEC');
+      const subject = String(body.subject ?? 'Mathematics');
+      const topic = String(body.topic ?? 'Quadratic Equations');
+      const reply = await callNvidia(
+        [
+          {
+            role: 'system',
+            content:
+              'Return ONLY a raw JSON array (no markdown fences) of 3 predicted exam question objects: { "id": string, "question": string, "probability": "High"|"Medium", "markingTip": string }. Be realistic and never guarantee exam outcomes.',
+          },
+          {
+            role: 'user',
+            content: `Exam: ${examType}, Subject: ${subject}, Topic: ${topic}. Generate 3 realistic high-yield practice exam predictions with marking tips.`,
+          },
+        ],
+        900
+      );
+      const cleaned = reply.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      res.status(200).json(JSON.parse(cleaned));
+      return;
+    }
+
+    if (route === 'quiz-generator') {
+      const subject = String(body.subject ?? 'Mathematics');
+      const topic = String(body.topic ?? 'Quadratic Equations');
+      const count = Math.min(8, Math.max(2, Number(body.count ?? 4)));
+      const difficulty = String(body.difficulty ?? 'Medium');
+      const reply = await callNvidia(
+        [
+          {
+            role: 'system',
+            content:
+              'Return ONLY a raw JSON array (no markdown fences) of multiple-choice quiz objects: { "id": string, "prompt": string, "options": [string, string, string, string], "correctIndex": 0|1|2|3, "explanation": string }.',
+          },
+          {
+            role: 'user',
+            content: `Generate ${count} ${difficulty}-difficulty multiple-choice questions for ${subject} on topic "${topic}".`,
+          },
+        ],
+        1300
+      );
+      const cleaned = reply.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      res.status(200).json(JSON.parse(cleaned));
+      return;
+    }
+
     const reply = await callNvidia([
       {
         role: 'system',

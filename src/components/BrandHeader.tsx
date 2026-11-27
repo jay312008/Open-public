@@ -25,12 +25,20 @@ export function BrandHeader({
   const router = useRouter();
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.leftRow}>
         {showBack ? (
           <AnimatedPressable
-            onPress={() => router.back()}
+            onPress={handleBack}
             style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
             accessibilityLabel="Go back"
           >
@@ -68,14 +76,16 @@ export function BrandHeader({
       </View>
 
       <View style={styles.rightRow}>
-        <AnimatedPressable
-          onPress={() => router.push('/notifications')}
-          style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          accessibilityLabel="Notifications"
-        >
-          <Ionicons name="notifications-outline" size={20} color={colors.text} />
-          {unreadCount > 0 && <View style={[styles.badgeDot, { backgroundColor: colors.coral }]} />}
-        </AnimatedPressable>
+        {!showBack && (
+          <AnimatedPressable
+            onPress={() => router.push('/notifications')}
+            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            accessibilityLabel="Notifications"
+          >
+            <Ionicons name="notifications-outline" size={20} color={colors.text} />
+            {unreadCount > 0 && <View style={[styles.badgeDot, { backgroundColor: colors.coral }]} />}
+          </AnimatedPressable>
+        )}
 
         {showSettings && (
           <AnimatedPressable
