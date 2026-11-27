@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -13,7 +13,7 @@ import { ThemeMode } from '@/theme/tokens';
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
-  const { profile } = useApp();
+  const { profile, learningMemory, updateLearningMemory } = useApp();
   const router = useRouter();
   const companion = getCompanionById(profile.companionId);
 
@@ -57,6 +57,36 @@ export default function SettingsScreen() {
             </View>
           </View>
 
+          {/* Shared Learning Memory Privacy Toggle */}
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Shared Learning Memory</Text>
+                <Text style={[styles.menuSub, { color: colors.textSecondary }]}>
+                  Allow Molly and your AI Teachers to adapt explanations using your weak quiz topics & education level.
+                </Text>
+              </View>
+              <Switch
+                value={learningMemory.shareContextWithAI}
+                onValueChange={(val) => updateLearningMemory({ shareContextWithAI: val })}
+                trackColor={{ false: colors.surfaceMuted, true: colors.mintDark }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            {learningMemory.weakTopics.length > 0 && (
+              <View style={styles.weakBox}>
+                <Text style={{ color: colors.textMuted, fontSize: 11.5, fontWeight: '700' }}>
+                  Tracked weak topics: {learningMemory.weakTopics.join(', ')}
+                </Text>
+                <AnimatedPressable onPress={() => updateLearningMemory({ weakTopics: [] })}>
+                  <Text style={{ color: colors.coral, fontSize: 12, fontWeight: '800', marginTop: 4 }}>
+                    Clear tracked topics
+                  </Text>
+                </AnimatedPressable>
+              </View>
+            )}
+          </View>
+
           {/* Settings Menu */}
           <View style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {[
@@ -65,6 +95,18 @@ export default function SettingsScreen() {
                 title: 'Cloud Account & Sync',
                 sub: 'Sign in or create a Supabase account',
                 route: '/auth' as const,
+              },
+              {
+                icon: 'wallet-outline' as const,
+                title: 'Credit Wallet & Usage',
+                sub: `${profile.credits} test credits · Transparent usage log`,
+                route: '/wallet' as const,
+              },
+              {
+                icon: 'calendar-outline' as const,
+                title: 'Study Timetable',
+                sub: 'Weekly revision schedule & exam countdown',
+                route: '/timetable' as const,
               },
               {
                 icon: 'person-outline' as const,
@@ -87,7 +129,7 @@ export default function SettingsScreen() {
               {
                 icon: 'bookmark-outline' as const,
                 title: 'Saved Resources & Chats',
-                sub: 'Review saved Molly chats and Live Teacher sessions',
+                sub: 'Search saved Molly chats, Live Boards & quiz history',
                 route: '/saved-resources' as const,
               },
             ].map((item, idx) => (
@@ -134,6 +176,8 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: 18, paddingBottom: 40, gap: 14 },
   card: { borderRadius: 20, borderWidth: 1, padding: 15, gap: 10 },
   sectionTitle: { fontSize: 15, fontWeight: '800' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  weakBox: { paddingTop: 6 },
   modeRow: { flexDirection: 'row', gap: 8 },
   modePill: { flex: 1, paddingVertical: 10, borderRadius: 999, alignItems: 'center' },
   menuCard: { borderRadius: 20, borderWidth: 1, overflow: 'hidden' },

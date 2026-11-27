@@ -99,6 +99,15 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     if (route === 'chat') {
       const question = String(body.question ?? '').trim();
       const subject = body.subject ? String(body.subject) : 'general studies';
+      const learningContext = body.learningContext ? String(body.learningContext).slice(0, 800) : '';
+
+      const userPrompt = [
+        subject !== 'general studies' ? `[Subject: ${subject}]` : '',
+        learningContext ? `[Student Learning Context: ${learningContext}]` : '',
+        question,
+      ]
+        .filter(Boolean)
+        .join('\n');
 
       const reply = await callNvidia(
         [
@@ -109,7 +118,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           },
           {
             role: 'user',
-            content: subject !== 'general studies' ? `[Subject: ${subject}] ${question}` : question,
+            content: userPrompt,
           },
         ],
         1100

@@ -72,12 +72,14 @@ export interface MollyChatReply {
 
 export async function askMollyAI(
   question: string,
-  subject?: string
+  subject?: string,
+  learningContext?: string
 ): Promise<AIResponse<MollyChatReply>> {
   if (isLiveAIGatewayConfigured) {
     const remote = await postToGatewayDetailed<MollyChatReply>('/chat', {
       question,
       subject,
+      learningContext,
     });
     if (remote.data && remote.data.text) {
       return { data: remote.data, source: 'live-gateway' };

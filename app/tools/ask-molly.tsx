@@ -64,9 +64,13 @@ function buildRichMessage(
 }
 
 export default function AskMollyScreen() {
-  const { initialQuestion } = useLocalSearchParams<{ initialQuestion?: string }>();
+  const { initialQuestion, prompt } = useLocalSearchParams<{
+    initialQuestion?: string;
+    prompt?: string;
+  }>();
+  const seedPrompt = initialQuestion ?? prompt;
   const { colors, isDark } = useTheme();
-  const { profile, saveConversation } = useApp();
+  const { profile, saveConversation, learningMemory, consumeCredits } = useApp();
   const companion = getCompanionById(profile.companionId);
   const firstName = profile.displayName.split(' ')[0];
 
@@ -101,7 +105,16 @@ export default function AskMollyScreen() {
     setInput('');
     setLoading(true);
 
-    const res = await askMollyAI(clean);
+    consumeCredits(1, `Ask Molly: ${clean.slice(0, 32)}`, 'ai-chat');
+    const memContext = learningMemory.shareContextWithAI
+      ? `Education level: ${profile.educationLevel}.${
+          learningMemory.weakTopics.length > 0
+            ? ` Weak topics needing extra clarity: ${learningMemory.weakTopics.join(', ')}.`
+            : ''
+        }`
+      : undefined;
+
+    const res = await askMollyAI(clean, undefined, memContext);
     const enriched = buildRichMessage(clean, res.data, firstName);
     const botMsg: ChatMsg = {
       id: `a-${Date.now()}`,
@@ -128,11 +141,11 @@ export default function AskMollyScreen() {
   };
 
   useEffect(() => {
-    if (initialQuestion) {
-      sendMessage(initialQuestion);
+    if (seedPrompt) {
+      sendMessage(seedPrompt);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQuestion]);
+  }, [seedPrompt]);
 
   useEffect(() => {
     const t = setTimeout(() => {

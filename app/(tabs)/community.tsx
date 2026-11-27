@@ -35,6 +35,7 @@ export default function CommunityScreen() {
     addCommentToPost,
     deletePost,
     toggleJoinGroup,
+    createStudyGroup,
   } = useApp();
   const router = useRouter();
 
@@ -44,6 +45,12 @@ export default function CommunityScreen() {
   const [composerModalOpen, setComposerModalOpen] = useState(false);
   const [activePostForComments, setActivePostForComments] = useState<CommunityPost | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [grpName, setGrpName] = useState('');
+  const [grpSubject, setGrpSubject] = useState('Mathematics');
+  const [grpDesc, setGrpDesc] = useState('');
+  const [grpPrivate, setGrpPrivate] = useState(true);
+  const [grpBilling, setGrpBilling] = useState<'personal' | 'group_pool' | 'sponsored'>('personal');
 
   const pickImage = async () => {
     try {
@@ -169,6 +176,183 @@ export default function CommunityScreen() {
           {/* GROUPS TAB */}
           {activeTab === 'Groups' ? (
             <View style={{ gap: 12 }}>
+              <AnimatedPressable
+                onPress={() => setShowCreateGroup((v) => !v)}
+                style={[
+                  styles.postCard,
+                  {
+                    backgroundColor: colors.mintDark,
+                    borderColor: colors.mintDark,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    paddingVertical: 13,
+                  },
+                ]}
+              >
+                <Ionicons name={showCreateGroup ? 'close' : 'add-circle-outline'} size={19} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14.5 }}>
+                  {showCreateGroup ? 'Cancel' : 'Create Study Group'}
+                </Text>
+              </AnimatedPressable>
+
+              {showCreateGroup && (
+                <View style={[styles.postCard, { backgroundColor: colors.surface, borderColor: colors.border, gap: 10 }]}>
+                  <Text style={[styles.groupTitle, { color: colors.text }]}>New AI Study Group</Text>
+                  <TextInput
+                    value={grpName}
+                    onChangeText={setGrpName}
+                    placeholder="Group name (e.g. GCE Physics A-Level Squad)"
+                    placeholderTextColor={colors.textMuted}
+                    style={[
+                      styles.composerInput,
+                      {
+                        color: colors.text,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 9,
+                      },
+                    ]}
+                  />
+                  <TextInput
+                    value={grpSubject}
+                    onChangeText={setGrpSubject}
+                    placeholder="Subject (e.g. Physics, Biology, Economics)"
+                    placeholderTextColor={colors.textMuted}
+                    style={[
+                      styles.composerInput,
+                      {
+                        color: colors.text,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 9,
+                      },
+                    ]}
+                  />
+                  <TextInput
+                    value={grpDesc}
+                    onChangeText={setGrpDesc}
+                    placeholder="Short study goal..."
+                    placeholderTextColor={colors.textMuted}
+                    style={[
+                      styles.composerInput,
+                      {
+                        color: colors.text,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 9,
+                      },
+                    ]}
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { label: '🔒 Private (AI Enabled)', value: true },
+                      { label: '🌍 Public (Peer-Only)', value: false },
+                    ].map((opt) => (
+                      <AnimatedPressable
+                        key={opt.label}
+                        onPress={() => setGrpPrivate(opt.value)}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 9,
+                          borderRadius: 999,
+                          alignItems: 'center',
+                          backgroundColor: grpPrivate === opt.value ? colors.coral : colors.surfaceMuted,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: grpPrivate === opt.value ? '#FFFFFF' : colors.text,
+                            fontSize: 12,
+                            fontWeight: '800',
+                          }}
+                        >
+                          {opt.label}
+                        </Text>
+                      </AnimatedPressable>
+                    ))}
+                  </View>
+                  {grpPrivate && (
+                    <View style={{ gap: 6 }}>
+                      <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '700' }}>
+                        AI Credit Billing Mode (up to 5 AI Teachers):
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {(
+                          [
+                            { id: 'personal', label: 'Personal' },
+                            { id: 'group_pool', label: 'Group Pool' },
+                            { id: 'sponsored', label: 'Sponsored' },
+                          ] as const
+                        ).map((b) => (
+                          <AnimatedPressable
+                            key={b.id}
+                            onPress={() => setGrpBilling(b.id)}
+                            style={{
+                              flex: 1,
+                              paddingVertical: 7,
+                              borderRadius: 999,
+                              alignItems: 'center',
+                              backgroundColor: grpBilling === b.id ? colors.purple : colors.surfaceMuted,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: grpBilling === b.id ? '#FFFFFF' : colors.text,
+                                fontSize: 11.5,
+                                fontWeight: '800',
+                              }}
+                            >
+                              {b.label}
+                            </Text>
+                          </AnimatedPressable>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                  <AnimatedPressable
+                    onPress={() => {
+                      if (!grpName.trim()) return;
+                      const created = createStudyGroup({
+                        name: grpName,
+                        subject: grpSubject,
+                        description: grpDesc,
+                        isPrivate: grpPrivate,
+                        aiTeacherIds: grpPrivate ? ['t-gce-math'] : [],
+                        billingMode: grpBilling,
+                      });
+                      setGrpName('');
+                      setGrpDesc('');
+                      setShowCreateGroup(false);
+                      router.push(`/community/group/${created.id}`);
+                    }}
+                    style={{
+                      backgroundColor: grpName.trim() ? colors.mintDark : colors.surfaceMuted,
+                      paddingVertical: 12,
+                      borderRadius: 999,
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: grpName.trim() ? '#FFFFFF' : colors.textMuted,
+                        fontWeight: '800',
+                        fontSize: 14,
+                      }}
+                    >
+                      Create & Open Group
+                    </Text>
+                  </AnimatedPressable>
+                </View>
+              )}
+
               {groups.map((grp) => (
                 <AnimatedPressable
                   key={grp.id}
@@ -182,7 +366,8 @@ export default function CommunityScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.groupTitle, { color: colors.text }]}>{grp.name}</Text>
                       <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                        {grp.subject} · {grp.memberCount} members
+                        {grp.subject} · {grp.memberCount} members · {grp.isPrivate ? '🔒 Private' : '🌍 Public'}
+                        {grp.isPrivate && grp.aiEnabled ? ' · 🤖 AI' : ''}
                       </Text>
                     </View>
                     <AnimatedPressable

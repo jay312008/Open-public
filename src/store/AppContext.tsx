@@ -11,18 +11,22 @@ import {
 import {
   BadgeItem,
   CommunityPost,
+  CreditTransactionItem,
   ExamType,
   JourneyLevelNode,
   JourneyPlan,
   KnowledgeLevel,
+  LearningMemorySettings,
   LearningPace,
   NotificationItem,
   NotificationPreferences,
   PublicStudent,
+  QuizAttemptRecord,
   SavedConversation,
   StudentProfile,
   StudyGroup,
   SubjectItem,
+  TimetableSlot,
   XPEvent,
 } from '@/types/models';
 
@@ -41,6 +45,10 @@ interface PersistedState {
   notificationPrefs: NotificationPreferences;
   completedLessonIds: string[];
   quizzesCompleted: number;
+  learningMemory: LearningMemorySettings;
+  timetableSlots: TimetableSlot[];
+  quizHistory: QuizAttemptRecord[];
+  creditTransactions: CreditTransactionItem[];
 }
 
 const DEFAULT_CREDITS = Number(process.env.EXPO_PUBLIC_DEFAULT_TEST_CREDITS ?? 250);
@@ -79,6 +87,36 @@ function computeLevel(xp: number): { level: number; levelTitle: string } {
   return { level, levelTitle: titles[Math.min(level - 1, titles.length - 1)] };
 }
 
+const INITIAL_TIMETABLE: TimetableSlot[] = [
+  {
+    id: 'tt-1',
+    day: 'Mon',
+    timeRange: '16:00 – 17:00',
+    subjectName: 'Mathematics',
+    topic: 'Quadratic Equations & Factoring',
+    reminderEnabled: true,
+    completed: false,
+  },
+  {
+    id: 'tt-2',
+    day: 'Wed',
+    timeRange: '17:00 – 18:00',
+    subjectName: 'Physics',
+    topic: 'Waves, Frequency & Wavelength',
+    reminderEnabled: true,
+    completed: false,
+  },
+  {
+    id: 'tt-3',
+    day: 'Fri',
+    timeRange: '16:30 – 17:30',
+    subjectName: 'Chemistry',
+    topic: 'Stoichiometry & Mole Calculations',
+    reminderEnabled: false,
+    completed: false,
+  },
+];
+
 const INITIAL_STATE: PersistedState = {
   profile: INITIAL_PROFILE,
   subjects: SUBJECT_CATALOG,
@@ -107,6 +145,21 @@ const INITIAL_STATE: PersistedState = {
   },
   completedLessonIds: [],
   quizzesCompleted: 0,
+  learningMemory: {
+    shareContextWithAI: true,
+    weakTopics: [],
+  },
+  timetableSlots: INITIAL_TIMETABLE,
+  quizHistory: [],
+  creditTransactions: [
+    {
+      id: 'ct-welcome',
+      delta: Number.isFinite(DEFAULT_CREDITS) ? DEFAULT_CREDITS : 250,
+      reason: 'Welcome test credit grant (development sandbox)',
+      category: 'test-topup',
+      createdAt: 'Initial balance',
+    },
+  ],
 };
 
 export interface CreatePlanInput {
@@ -120,6 +173,15 @@ export interface CreatePlanInput {
   dailyStudyMinutes: number;
   difficultAreas: string;
   pace: LearningPace;
+}
+
+export interface CreateStudyGroupInput {
+  name: string;
+  subject: string;
+  description: string;
+  isPrivate: boolean;
+  aiTeacherIds?: string[];
+  billingMode?: 'personal' | 'group_pool' | 'sponsored';
 }
 
 interface AppContextValue {
@@ -137,22 +199,37 @@ interface AppContextValue {
   notificationPrefs: NotificationPreferences;
   completedLessonIds: string[];
   quizzesCompleted: number;
+  learningMemory: LearningMemorySettings;
+  timetableSlots: TimetableSlot[];
+  quizHistory: QuizAttemptRecord[];
+  creditTransactions: CreditTransactionItem[];
 
   // Profile & Settings
   updateProfile: (patch: Partial<StudentProfile>) => void;
   setCompanion: (companionId: CompanionId) => void;
   updateNotificationPrefs: (patch: Partial<NotificationPreferences>) => void;
   markAllNotificationsRead: () => void;
-  consumeCredits: (amount: number) => boolean;
+  consumeCredits: (
+    amount: number,
+    reason?: string,
+    category?: CreditTransactionItem['category']
+  ) => boolean;
+  grantTestCredits: (amount: number, reason?: string) => void;
+  updateLearningMemory: (patch: Partial<LearningMemorySettings>) => void;
 
   // Subjects & Custom Topics
   addCustomTopic: (subjectId: string, title: string, description: string) => void;
+
+  // Timetable
+  addTimetableSlot: (slot: Omit<TimetableSlot, 'id' | 'completed'>) => void;
+  toggleTimetableSlot: (slotId: string) => void;
+  deleteTimetableSlot: (slotId: string) => void;
 
   // Learning Journey
   generateJourneyPlan: (input: CreatePlanInput) => JourneyPlan;
   completeJourneyLesson: (lessonId: string) => { awardedXp: number; alreadyCompleted: boolean };
   toggleDailyTask: (taskId: string) => void;
-  recordQuizCompletion: (quizKey: string, scorePercent: number) => void;
+  recordQuizCompletion: (quizKey: string, scorePercent: number, title?: string) => void;
 
   // Community & Social
   createPost: (content: string, subjectTag?: string, imageUri?: string, groupId?: string) => void;
@@ -163,6 +240,7 @@ interface AppContextValue {
   toggleFollowUser: (userId: string) => void;
   toggleJoinGroup: (groupId: string) => void;
   sendGroupMessage: (groupId: string, text: string) => void;
+  createStudyGroup: (input: CreateStudyGroupInput) => StudyGroup;
 
   // AI Conversations
   saveConversation: (conv: SavedConversation) => void;
@@ -288,17 +366,97 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [updateState]);
 
   const consumeCredits = useCallback(
-    (amount: number): boolean => {
+    (
+      amount: number,
+      reason = 'AI session credit usage',
+      category: CreditTransactionItem['category'] = 'ai-chat'
+    ): boolean => {
       let ok = false;
       updateState((prev) => {
         if (prev.profile.credits < amount) return prev;
         ok = true;
+        const tx: CreditTransactionItem = {
+          id: `ct-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          delta: -amount,
+          reason,
+          category,
+          createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
         return {
           ...prev,
           profile: { ...prev.profile, credits: prev.profile.credits - amount },
+          creditTransactions: [tx, ...(prev.creditTransactions ?? [])].slice(0, 60),
         };
       });
       return ok;
+    },
+    [updateState]
+  );
+
+  const grantTestCredits = useCallback(
+    (amount: number, reason = 'Test credit top-up (sandbox)') => {
+      updateState((prev) => {
+        const tx: CreditTransactionItem = {
+          id: `ct-${Date.now()}`,
+          delta: amount,
+          reason,
+          category: 'test-topup',
+          createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        return {
+          ...prev,
+          profile: { ...prev.profile, credits: prev.profile.credits + amount },
+          creditTransactions: [tx, ...(prev.creditTransactions ?? [])].slice(0, 60),
+        };
+      });
+    },
+    [updateState]
+  );
+
+  const updateLearningMemory = useCallback(
+    (patch: Partial<LearningMemorySettings>) => {
+      updateState((prev) => ({
+        ...prev,
+        learningMemory: {
+          ...(prev.learningMemory ?? { shareContextWithAI: true, weakTopics: [] }),
+          ...patch,
+        },
+      }));
+    },
+    [updateState]
+  );
+
+  const addTimetableSlot = useCallback(
+    (slot: Omit<TimetableSlot, 'id' | 'completed'>) => {
+      updateState((prev) => ({
+        ...prev,
+        timetableSlots: [
+          ...(prev.timetableSlots ?? []),
+          { ...slot, id: `tt-${Date.now()}`, completed: false },
+        ],
+      }));
+    },
+    [updateState]
+  );
+
+  const toggleTimetableSlot = useCallback(
+    (slotId: string) => {
+      updateState((prev) => ({
+        ...prev,
+        timetableSlots: (prev.timetableSlots ?? []).map((s) =>
+          s.id === slotId ? { ...s, completed: !s.completed } : s
+        ),
+      }));
+    },
+    [updateState]
+  );
+
+  const deleteTimetableSlot = useCallback(
+    (slotId: string) => {
+      updateState((prev) => ({
+        ...prev,
+        timetableSlots: (prev.timetableSlots ?? []).filter((s) => s.id !== slotId),
+      }));
     },
     [updateState]
   );
@@ -584,11 +742,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const recordQuizCompletion = useCallback(
-    (quizKey: string, scorePercent: number) => {
+    (quizKey: string, scorePercent: number, title?: string) => {
       updateState((prev) => {
         const xp = Math.max(20, Math.round(scorePercent * 0.6));
+        const recordTitle = title ?? quizKey.replace(/[-_]/g, ' ');
+        const attempt: QuizAttemptRecord = {
+          id: `qa-${Date.now()}`,
+          quizKey,
+          title: recordTitle,
+          scorePercent,
+          createdAt: new Date().toLocaleDateString(),
+        };
+        const currentMem = prev.learningMemory ?? { shareContextWithAI: true, weakTopics: [] };
+        const nextWeak =
+          scorePercent < 60 && !currentMem.weakTopics.includes(recordTitle)
+            ? [recordTitle, ...currentMem.weakTopics].slice(0, 12)
+            : currentMem.weakTopics;
         const { next } = awardXPInState(
-          { ...prev, quizzesCompleted: prev.quizzesCompleted + 1 },
+          {
+            ...prev,
+            quizzesCompleted: prev.quizzesCompleted + 1,
+            quizHistory: [attempt, ...(prev.quizHistory ?? [])].slice(0, 40),
+            learningMemory: { ...currentMem, weakTopics: nextWeak },
+          },
           `quiz:${quizKey}`,
           xp,
           `Quiz completed (${scorePercent}%)`
@@ -767,6 +943,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [updateState]
   );
 
+  const createStudyGroup = useCallback(
+    (input: CreateStudyGroupInput): StudyGroup => {
+      const code = `LM-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+      const newGroup: StudyGroup = {
+        id: `grp-${Date.now()}`,
+        name: input.name.trim(),
+        subject: input.subject.trim() || 'General',
+        description: input.description.trim() || 'Focused study group on LearnyMol.',
+        isPrivate: input.isPrivate,
+        inviteCode: input.isPrivate ? code : undefined,
+        // Per Master Blueprint: Public AI is disabled by default; Private groups can host up to 5 AI Teachers
+        aiEnabled: input.isPrivate ? (input.aiTeacherIds?.length ?? 0) > 0 : false,
+        aiTeacherIds: input.isPrivate ? (input.aiTeacherIds ?? []).slice(0, 5) : [],
+        billingMode: input.billingMode ?? 'personal',
+        dailyQuizPrompt: `Daily ${input.subject || 'GCE'} Quick Check`,
+        memberCount: 1,
+        joined: true,
+        messages: [
+          {
+            id: `gm-welcome-${Date.now()}`,
+            senderName: 'LearnyMol',
+            senderAvatar: '🌿',
+            text: input.isPrivate
+              ? `Private study group created! Share invite code ${code} with classmates. Up to 5 AI Teachers can assist this room.`
+              : 'Public study group created! Peer-to-peer discussion is open (Public AI is disabled by default to protect credit pools).',
+            createdAt: 'Just now',
+          },
+        ],
+      };
+      updateState((prev) => evaluateBadges({ ...prev, groups: [newGroup, ...prev.groups] }));
+      return newGroup;
+    },
+    [updateState]
+  );
+
   const saveConversation = useCallback(
     (conv: SavedConversation) => {
       updateState((prev) => {
@@ -798,12 +1009,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       notificationPrefs: state.notificationPrefs,
       completedLessonIds: state.completedLessonIds,
       quizzesCompleted: state.quizzesCompleted,
+      learningMemory: state.learningMemory ?? { shareContextWithAI: true, weakTopics: [] },
+      timetableSlots: state.timetableSlots ?? INITIAL_TIMETABLE,
+      quizHistory: state.quizHistory ?? [],
+      creditTransactions: state.creditTransactions ?? [],
       updateProfile,
       setCompanion,
       updateNotificationPrefs,
       markAllNotificationsRead,
       consumeCredits,
+      grantTestCredits,
+      updateLearningMemory,
       addCustomTopic,
+      addTimetableSlot,
+      toggleTimetableSlot,
+      deleteTimetableSlot,
       generateJourneyPlan,
       completeJourneyLesson,
       toggleDailyTask,
@@ -816,6 +1036,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleFollowUser,
       toggleJoinGroup,
       sendGroupMessage,
+      createStudyGroup,
       saveConversation,
     }),
     [
@@ -826,7 +1047,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateNotificationPrefs,
       markAllNotificationsRead,
       consumeCredits,
+      grantTestCredits,
+      updateLearningMemory,
       addCustomTopic,
+      addTimetableSlot,
+      toggleTimetableSlot,
+      deleteTimetableSlot,
       generateJourneyPlan,
       completeJourneyLesson,
       toggleDailyTask,
@@ -839,6 +1065,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleFollowUser,
       toggleJoinGroup,
       sendGroupMessage,
+      createStudyGroup,
       saveConversation,
     ]
   );

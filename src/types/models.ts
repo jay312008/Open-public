@@ -173,6 +173,11 @@ export interface StudyGroup {
   subject: string;
   description: string;
   isPrivate: boolean;
+  inviteCode?: string;
+  aiEnabled?: boolean;
+  aiTeacherIds?: string[];
+  billingMode?: 'personal' | 'group_pool' | 'sponsored';
+  dailyQuizPrompt?: string;
   memberCount: number;
   joined: boolean;
   messages: {
@@ -271,3 +276,30 @@ export interface LearningMemorySettings {
   shareContextWithAI: boolean;
   weakTopics: string[];
 }
+
+export interface TimetableSlot {
+  id: string;
+  day: 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
+  timeRange: string;
+  subjectName: string;
+  topic: string;
+  reminderEnabled: boolean;
+  completed: boolean;
+}
+
+export interface QuizAttemptRecord {
+  id: string;
+  quizKey: string;
+  title: string;
+  scorePercent: number;
+  createdAt: string;
+}
+
+export interface CreditTransactionItem {
+  id: string;
+  delta: number;
+  reason: string;
+  category: 'ai-chat' | 'live-board' | 'quiz' | 'analyzer' | 'group' | 'test-topup';
+  createdAt: string;
+}
+

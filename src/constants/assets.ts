@@ -17,8 +17,7 @@ export const HomeCardAssets = {
   imageAnalyzerBg: require('../../assets/images/home/image_analyzer_bg.jpg') as ImageSourcePropType,
   imageAnalyzerFg: require('../../assets/images/home/image_analyzer_fg.png') as ImageSourcePropType,
   bookAnalyzerBg: require('../../assets/images/home/book_analyzer_bg.jpg') as ImageSourcePropType,
-  // Temporary reuse of transparent Molly holding an open book until dedicated book_analyzer_fg is generated after image-gen quota reset
-  bookAnalyzerFg: require('../../assets/images/logo-mascot-transparent.png') as ImageSourcePropType,
+  bookAnalyzerFg: require('../../assets/images/home/book_analyzer_fg.png') as ImageSourcePropType,
 };
 
 export type CompanionId = 'molly' | 'leo' | 'pip' | 'zuri';
