@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CompanionId } from '@/constants/assets';
+import { pullProfileFromCloud, syncProfileToCloud } from '@/lib/cloudSync';
 import {
   DEFAULT_BADGES,
   INITIAL_COMMUNITY_POSTS,
@@ -265,11 +266,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .catch(() => {})
-      .finally(() => setHydrated(true));
+      .finally(() => {
+        setHydrated(true);
+        pullProfileFromCloud().then((remote) => {
+          if (!remote) return;
+          setState((prev) => ({
+            ...prev,
+            profile: {
+              ...prev.profile,
+              ...Object.fromEntries(Object.entries(remote).filter(([, v]) => v !== undefined)),
+            },
+          }));
+        });
+      });
   }, []);
 
   const persist = useCallback((next: PersistedState) => {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+    syncProfileToCloud(next.profile).catch(() => {});
   }, []);
 
   const updateState = useCallback(
