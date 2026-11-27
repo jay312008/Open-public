@@ -1,20 +1,20 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import Svg, { Path, Polygon, Circle, Line } from 'react-native-svg';
 import { AppBackground } from '@/components/AppBackground';
-import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
-import { CompanionAvatar } from '@/components/CompanionAvatar';
+import { LayeredFeatureCard } from '@/components/LayeredFeatureCard';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
-import { getCompanionById } from '@/constants/assets';
+import { getCompanionById, HomeCardAssets } from '@/constants/assets';
 
 export default function HomeScreen() {
-  const { colors } = useTheme();
-  const { profile, journeyPlan, subjects, completedLessonIds } = useApp();
+  const { colors, isDark } = useTheme();
+  const { profile, journeyPlan, subjects, completedLessonIds, notifications } = useApp();
+  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
   const router = useRouter();
   const [question, setQuestion] = useState('');
 
@@ -35,7 +35,7 @@ export default function HomeScreen() {
       ? Math.round((completedJourneyLessons / totalJourneyLessons) * 100)
       : 0;
 
-  // Next recommended lesson
+  // Next recommended lesson from real subject catalog
   const allLessons = subjects.flatMap((s) =>
     s.topics.flatMap((t) => t.lessons.map((l) => ({ subject: s, topic: t, lesson: l })))
   );
@@ -51,120 +51,264 @@ export default function HomeScreen() {
     });
   };
 
-  const quickTools = [
+  // Approved LearnyMol quick shortcuts (no Games/Stories/Activities)
+  const quickShortcuts = [
     {
       id: 'live',
       label: 'Live Teacher',
-      icon: 'mic-outline' as const,
-      color: colors.coral,
-      bg: colors.surfaceCoralSoft,
+      icon: 'mic' as const,
+      color: '#FF6B4A',
+      tint: isDark ? 'rgba(255,107,74,0.22)' : '#FFECE6',
       route: '/tools/live-teacher' as const,
     },
     {
       id: 'exam',
       label: 'Exam Predictor',
-      icon: 'sparkles-outline' as const,
-      color: colors.purple,
-      bg: colors.surfacePurpleSoft,
+      icon: 'sparkles' as const,
+      color: '#7C5CFA',
+      tint: isDark ? 'rgba(124,92,250,0.22)' : '#F1EBFF',
       route: '/tools/exam-predictor' as const,
     },
     {
       id: 'quiz',
       label: 'Quiz Gen',
-      icon: 'checkbox-outline' as const,
-      color: colors.blue,
-      bg: colors.surfaceBlueSoft,
+      icon: 'checkbox' as const,
+      color: '#3B82F6',
+      tint: isDark ? 'rgba(59,130,246,0.22)' : '#E8F2FF',
       route: '/tools/quiz-generator' as const,
     },
     {
-      id: 'book',
-      label: 'Book & Image',
-      icon: 'scan-outline' as const,
-      color: colors.mintDark,
-      bg: colors.surfaceMint,
-      route: '/tools/book-analyzer' as const,
+      id: 'chat',
+      label: 'Ask Molly',
+      icon: 'chatbubble-ellipses' as const,
+      color: '#22A861',
+      tint: isDark ? 'rgba(34,168,97,0.22)' : '#E5F8EE',
+      route: '/tools/ask-molly' as const,
     },
   ];
 
   return (
     <AppBackground>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <BrandHeader />
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Compact Greeting */}
-          <View style={styles.greetingRow}>
-            <View>
-              <Text style={[styles.greetingTitle, { color: colors.text }]}>
-                Hi {firstName} 👋
-              </Text>
-              <Text style={[styles.greetingSub, { color: colors.textSecondary }]}>
-                What would you like to master today?
-              </Text>
-            </View>
+          {/* Top Greeting Header (matches new reference: avatar, greeting, notification bell) */}
+          <View style={styles.topHeader}>
             <AnimatedPressable
-              onPress={() => router.push('/leaderboard')}
-              style={[
-                styles.xpPill,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
+              onPress={() => router.push('/(tabs)/profile')}
+              style={styles.headerLeft}
+              accessibilityLabel="Open your profile"
             >
-              <Ionicons name="flame" size={16} color={colors.coral} />
-              <Text style={[styles.xpPillText, { color: colors.text }]}>
-                {profile.streakDays}d · {profile.xp} XP
-              </Text>
+              <View
+                style={[
+                  styles.avatarRing,
+                  {
+                    backgroundColor: profile.avatarBg,
+                    borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#FFFFFF',
+                  },
+                ]}
+              >
+                <Text style={styles.avatarEmoji}>{profile.avatarEmoji}</Text>
+              </View>
+              <View style={styles.greetingCol}>
+                <Text style={[styles.greetingTitle, { color: colors.text }]} numberOfLines={1}>
+                  Hello, {firstName}
+                </Text>
+                <Text style={[styles.greetingSub, { color: colors.textSecondary }]} numberOfLines={1}>
+                  Ready to learn today?
+                </Text>
+              </View>
+            </AnimatedPressable>
+
+            <AnimatedPressable
+              onPress={() => router.push('/notifications')}
+              style={[
+                styles.notifBtn,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(39,56,47,0.9)'
+                    : 'rgba(255,255,255,0.88)',
+                  borderColor: isDark
+                    ? 'rgba(255,255,255,0.16)'
+                    : 'rgba(255,255,255,0.96)',
+                },
+              ]}
+              accessibilityLabel="Notifications"
+            >
+              <Ionicons name="notifications-outline" size={21} color={colors.text} />
+              {unreadNotificationsCount > 0 && <View style={styles.unreadDot} />}
             </AnimatedPressable>
           </View>
 
-          {/* Interactive Ask Molly Card with overlapping mascot */}
-          <View style={styles.askMollyWrapper}>
-            <View
-              style={[
-                styles.askMollyCard,
-                {
-                  backgroundColor: colors.surfaceMint,
-                  borderColor: colors.border,
-                  shadowColor: colors.shadowColor,
-                },
-              ]}
+          {/* Learning Progress Hero Banner (Lavender-plum softly dimensional card with real XP/progress) */}
+          <AnimatedPressable
+            onPress={() => router.push('/(tabs)/journey')}
+            scaleTo={0.98}
+            style={styles.heroWrap}
+            accessibilityLabel="Open your Learning Journey"
+          >
+            <LinearGradient
+              colors={isDark ? ['#3D3466', '#2D2550'] : ['#9B8CFF', '#836FF6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroCard}
             >
-              {/* Layered green wave decoration */}
-              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                <Svg width="100%" height="100%" viewBox="0 0 340 165" preserveAspectRatio="none">
-                  <Path
-                    d="M0 95 C90 55, 220 135, 340 75 L340 165 L0 165 Z"
-                    fill={colors.surfaceMintStrong}
-                    opacity={0.7}
-                  />
-                </Svg>
-              </View>
-
-              <View style={styles.askMollyHeader}>
-                <View style={{ flex: 1, paddingRight: 86 }}>
-                  <View style={styles.onlinePill}>
-                    <View style={[styles.onlineDot, { backgroundColor: colors.mint }]} />
-                    <Text style={[styles.onlineText, { color: colors.mintDark }]}>
-                      Ask {companion.name} AI
-                    </Text>
-                  </View>
-                  <Text style={[styles.askTitle, { color: colors.text }]}>
-                    Stuck on a topic or homework?
+              <View style={styles.heroLeft}>
+                <View style={styles.heroTitleRow}>
+                  <Text style={styles.heroLevelText}>Level {profile.level}</Text>
+                  <Text style={styles.heroDot}>·</Text>
+                  <Text style={styles.heroSubTitle} numberOfLines={1}>
+                    Your learning journey
                   </Text>
                 </View>
+                <Text style={styles.heroEncourage} numberOfLines={1}>
+                  {journeyPlan
+                    ? `${completedJourneyLessons}/${totalJourneyLessons} lessons · ${profile.streakDays}d streak · ${profile.xp} XP`
+                    : `Let's reach new heights together! · ${profile.xp} XP`}
+                </Text>
+
+                <View style={styles.heroBarTrack}>
+                  <LinearGradient
+                    colors={['#FFAD76', '#FF7B54']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[
+                      styles.heroBarFill,
+                      { width: `${Math.max(12, journeyPercent || (profile.xp % 100))}%` },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              <AnimatedPressable
+                onPress={() => router.push('/leaderboard')}
+                style={styles.trophyBadge}
+                accessibilityLabel="Open Leaderboard"
+              >
+                <Ionicons name="trophy" size={30} color="#FFD24C" />
+                <Text style={styles.trophyXp}>{profile.streakDays}d</Text>
+              </AnimatedPressable>
+            </LinearGradient>
+          </AnimatedPressable>
+
+          {/* 4 Glossy Circular Feature Shortcuts */}
+          <View style={styles.shortcutsRow}>
+            {quickShortcuts.map((item) => (
+              <AnimatedPressable
+                key={item.id}
+                onPress={() => router.push(item.route)}
+                scaleTo={0.94}
+                style={styles.shortcutItem}
+                accessibilityLabel={item.label}
+              >
+                <View
+                  style={[
+                    styles.shortcutCircleOuter,
+                    {
+                      backgroundColor: isDark
+                        ? 'rgba(39,56,47,0.92)'
+                        : 'rgba(255,255,255,0.9)',
+                      borderColor: isDark
+                        ? 'rgba(255,255,255,0.16)'
+                        : 'rgba(255,255,255,0.98)',
+                      shadowColor: colors.shadowColor,
+                    },
+                  ]}
+                >
+                  <View style={[styles.shortcutCircleInner, { backgroundColor: item.tint }]}>
+                    <Ionicons name={item.icon} size={23} color={item.color} />
+                  </View>
+                </View>
+                <Text
+                  style={[styles.shortcutLabel, { color: colors.text }]}
+                  numberOfLines={2}
+                >
+                  {item.label}
+                </Text>
+              </AnimatedPressable>
+            ))}
+          </View>
+
+          {/* Layered Card 1: Ask Molly Anything (separate pastel wave BG + transparent Molly teaching FG + interactive input) */}
+          <View
+            style={[
+              styles.mollyCardOuter,
+              {
+                borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.9)',
+                shadowColor: colors.shadowColor,
+              },
+            ]}
+          >
+            <Image
+              source={HomeCardAssets.askMollyBg}
+              resizeMode="cover"
+              style={StyleSheet.absoluteFill}
+            />
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['rgba(21,27,25,0.85)', 'rgba(21,27,25,0.62)', 'rgba(21,27,25,0.28)']
+                  : ['rgba(255,255,255,0.72)', 'rgba(255,255,255,0.42)', 'rgba(255,255,255,0.08)']
+              }
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={StyleSheet.absoluteFill}
+            />
+
+            {/* Independent Transparent Molly Character Layer */}
+            <View pointerEvents="none" style={styles.mollyFgSlot}>
+              <Image
+                source={HomeCardAssets.askMollyFg}
+                resizeMode="contain"
+                style={styles.mollyFgImg}
+              />
+            </View>
+
+            <View style={styles.mollyContent}>
+              <View style={styles.mollyLeft}>
+                <View style={styles.mollyOnlinePill}>
+                  <View style={[styles.onlineDot, { backgroundColor: colors.brandGreen }]} />
+                  <Text
+                    style={[
+                      styles.onlineText,
+                      { color: isDark ? '#A7E9AF' : '#2E7D32' },
+                    ]}
+                  >
+                    Chat with {companion.name}
+                  </Text>
+                </View>
+                <Text style={[styles.mollyTitle, { color: isDark ? '#F5F7F5' : '#251D3A' }]}>
+                  Ask {companion.name} Anything
+                </Text>
+                <Text
+                  style={[
+                    styles.mollySub,
+                    { color: isDark ? 'rgba(235,243,237,0.82)' : '#544B6E' },
+                  ]}
+                >
+                  Step-by-step help on any topic or homework
+                </Text>
               </View>
 
               <View
                 style={[
                   styles.inputRow,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(21,27,25,0.88)'
+                      : 'rgba(255,255,255,0.94)',
+                    borderColor: isDark
+                      ? 'rgba(255,255,255,0.16)'
+                      : 'rgba(230,220,245,0.9)',
+                  },
                 ]}
               >
                 <TextInput
                   value={question}
                   onChangeText={setQuestion}
-                  placeholder={`Ask ${companion.name} anything...`}
+                  placeholder={`Ask ${companion.name} a question...`}
                   placeholderTextColor={colors.textMuted}
                   style={[styles.input, { color: colors.text }]}
                   returnKeyType="send"
@@ -179,94 +323,74 @@ export default function HomeScreen() {
                 </AnimatedPressable>
               </View>
             </View>
-
-            {/* Overlapping Molly Mascot extending above/right of card */}
-            <View pointerEvents="none" style={styles.mascotOverlap}>
-              <CompanionAvatar companionId={profile.companionId} size={96} />
-            </View>
           </View>
 
-          {/* Four Compact Learning-Tool Shortcuts */}
-          <View style={styles.toolsGrid}>
-            {quickTools.map((tool) => (
-              <AnimatedPressable
-                key={tool.id}
-                onPress={() => router.push(tool.route)}
-                style={[
-                  styles.toolCard,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    shadowColor: colors.shadowColor,
-                  },
-                ]}
-              >
-                <View style={[styles.toolIconCircle, { backgroundColor: tool.bg }]}>
-                  <Ionicons name={tool.icon} size={20} color={tool.color} />
-                </View>
-                <Text style={[styles.toolLabel, { color: colors.text }]} numberOfLines={2}>
-                  {tool.label}
-                </Text>
-              </AnimatedPressable>
-            ))}
-          </View>
+          {/* Layered Card 2: My Subjects (mint/cream hills BG + transparent 3D schoolchildren FG) */}
+          <LayeredFeatureCard
+            title="My Subjects"
+            subtitle="Build a little knowledge every day across your topics"
+            accentColor="#42B86A"
+            backgroundSource={HomeCardAssets.subjectsBg}
+            foregroundSource={HomeCardAssets.subjectsFg}
+            foregroundWidthPercent="48%"
+            onPress={() => router.push('/(tabs)/subjects')}
+          />
 
-          {/* Learning Journey Card with Mountain & Coral Flag */}
-          <AnimatedPressable
+          {/* Layered Card 3: Learning Journey (road-free hills/mountains/trees BG + dynamic progress bar) */}
+          <LayeredFeatureCard
+            title="Learning Journey"
+            badgeText={journeyPlan ? `${journeyPercent}% Complete` : 'Personalized Road'}
+            subtitle={
+              journeyPlan
+                ? `${journeyPlan.goalName} · ${completedJourneyLessons}/${totalJourneyLessons} lessons done`
+                : 'Generate your illustrated study road with levels & stars'
+            }
+            accentColor="#FF7557"
+            backgroundSource={HomeCardAssets.learningJourneyBg}
+            progressPercent={journeyPlan ? journeyPercent : undefined}
             onPress={() => router.push('/(tabs)/journey')}
-            style={[
-              styles.featureCard,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                shadowColor: colors.shadowColor,
-              },
-            ]}
-          >
-            <View style={styles.featureLeft}>
-              <View style={[styles.tagPill, { backgroundColor: colors.surfaceCoralSoft }]}>
-                <Text style={[styles.tagText, { color: colors.coral }]}>LEARNING JOURNEY</Text>
-              </View>
-              <Text style={[styles.featureTitle, { color: colors.text }]}>
-                {journeyPlan ? journeyPlan.goalName : 'Start Your Study Road'}
-              </Text>
-              <Text style={[styles.featureSub, { color: colors.textSecondary }]}>
-                {journeyPlan
-                  ? `${completedJourneyLessons}/${totalJourneyLessons} lessons · ${journeyPercent}% complete`
-                  : 'Create a personalized roadmap with levels & lesson stars.'}
-              </Text>
-              <View style={[styles.progressTrack, { backgroundColor: colors.surfaceMuted }]}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      backgroundColor: colors.mint,
-                      width: `${Math.max(journeyPlan ? journeyPercent : 0, journeyPlan ? 6 : 0)}%`,
-                    },
-                  ]}
-                />
-              </View>
-            </View>
+          />
 
-            {/* Illustrated Mountain with Coral Flag */}
-            <View style={styles.mountainArt}>
-              <Svg width={86} height={82} viewBox="0 0 86 82">
-                <Path d="M4 76 L34 26 L64 76 Z" fill="#8CD47E" />
-                <Path d="M28 76 L56 18 L84 76 Z" fill="#58B957" />
-                <Path d="M48 34 L56 18 L64 34 L59 31 L56 35 L52 31 Z" fill="#FFFFFF" opacity={0.85} />
-                <Line x1="56" y1="18" x2="56" y2="5" stroke="#5A4636" strokeWidth="2.5" strokeLinecap="round" />
-                <Polygon points="56,5 74,10 56,16" fill="#FF6B4A" />
-                <Circle cx="18" cy="18" r="6" fill="#FFE082" opacity={0.85} />
-              </Svg>
-            </View>
-          </AnimatedPressable>
+          {/* Layered Card 4: Quiz Generator (peach/cream BG + transparent 3D quiz character FG) */}
+          <LayeredFeatureCard
+            title="Quiz Generator"
+            subtitle="Test yourself with custom questions and instant explanations"
+            accentColor="#FF8A4C"
+            backgroundSource={HomeCardAssets.quizGeneratorBg}
+            foregroundSource={HomeCardAssets.quizGeneratorFg}
+            foregroundWidthPercent="44%"
+            onPress={() => router.push('/tools/quiz-generator')}
+          />
 
-          {/* Continue Learning / Recommended Lesson Card */}
+          {/* Layered Card 5: Image Analyzer (sky/periwinkle BG + transparent magnifying-glass character FG) */}
+          <LayeredFeatureCard
+            title="Image Analyzer"
+            subtitle="Snap a math problem or diagram for clear visual breakdowns"
+            accentColor="#4B7BF5"
+            backgroundSource={HomeCardAssets.imageAnalyzerBg}
+            foregroundSource={HomeCardAssets.imageAnalyzerFg}
+            foregroundWidthPercent="44%"
+            onPress={() => router.push('/tools/image-analyzer')}
+          />
+
+          {/* Layered Card 6: Book Analyzer (cream/sage/lilac BG + transparent reading character FG) */}
+          <LayeredFeatureCard
+            title="Book Analyzer"
+            subtitle="Upload notes or chapters for smart summaries & key concepts"
+            accentColor="#8B63E6"
+            backgroundSource={HomeCardAssets.bookAnalyzerBg}
+            foregroundSource={HomeCardAssets.bookAnalyzerFg}
+            foregroundWidthPercent="40%"
+            onPress={() => router.push('/tools/book-analyzer')}
+          />
+
+          {/* Continue Learning Module (real next recommended lesson) */}
           {recommended && (
             <AnimatedPressable
               onPress={() => router.push(`/lesson/${recommended.lesson.id}`)}
+              scaleTo={0.98}
               style={[
-                styles.featureCard,
+                styles.continueCard,
                 {
                   backgroundColor: colors.surface,
                   borderColor: colors.border,
@@ -274,40 +398,19 @@ export default function HomeScreen() {
                 },
               ]}
             >
-              <View style={styles.featureLeft}>
+              <View style={styles.continueLeft}>
                 <View style={[styles.tagPill, { backgroundColor: colors.surfacePurpleSoft }]}>
-                  <Text style={[styles.tagText, { color: colors.purple }]}>
-                    CONTINUE LEARNING
-                  </Text>
+                  <Text style={[styles.tagText, { color: colors.purple }]}>CONTINUE LEARNING</Text>
                 </View>
-                <Text style={[styles.featureTitle, { color: colors.text }]} numberOfLines={1}>
+                <Text style={[styles.continueTitle, { color: colors.text }]} numberOfLines={1}>
                   {recommended.topic.title}
                 </Text>
-                <Text style={[styles.featureSub, { color: colors.textSecondary }]} numberOfLines={2}>
+                <Text style={[styles.continueSub, { color: colors.textSecondary }]} numberOfLines={2}>
                   {recommended.subject.name} · {recommended.lesson.title} ({recommended.lesson.durationMinutes} min)
                 </Text>
-                <View style={styles.continueRow}>
-                  <Text style={[styles.continueCta, { color: colors.coral }]}>
-                    Open Lesson
-                  </Text>
-                  <Ionicons name="arrow-forward" size={14} color={colors.coral} />
-                </View>
               </View>
-
-              {/* Math Parabola Illustration */}
-              <View style={[styles.mathArt, { backgroundColor: colors.surfacePurpleSoft }]}>
-                <Svg width={72} height={72} viewBox="0 0 72 72">
-                  <Line x1="10" y1="56" x2="62" y2="56" stroke="#8B5CF6" strokeWidth="1.8" opacity={0.5} />
-                  <Line x1="36" y1="12" x2="36" y2="62" stroke="#8B5CF6" strokeWidth="1.8" opacity={0.5} />
-                  <Path
-                    d="M14 18 Q36 68 58 18"
-                    stroke="#FF6B4A"
-                    strokeWidth="3"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
-                  <Circle cx="36" cy="43" r="3.5" fill="#58C45B" />
-                </Svg>
+              <View style={[styles.continuePlayBtn, { backgroundColor: colors.coral }]}>
+                <Ionicons name="play" size={18} color="#FFFFFF" />
               </View>
             </AnimatedPressable>
           )}
@@ -318,64 +421,227 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: 18,
-    paddingBottom: 112,
-    gap: 16,
+  safe: {
+    flex: 1,
   },
-  greetingRow: {
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 112,
+    gap: 14,
+  },
+  topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 2,
+    gap: 12,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  avatarRing: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#251D3A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  avatarEmoji: {
+    fontSize: 25,
+  },
+  greetingCol: {
+    flex: 1,
   },
   greetingTitle: {
     fontSize: 22,
     fontWeight: '800',
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
   },
   greetingSub: {
-    fontSize: 13,
-    marginTop: 2,
+    fontSize: 13.5,
+    marginTop: 1,
   },
-  xpPill: {
-    flexDirection: 'row',
+  notifBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  xpPillText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  askMollyWrapper: {
+    justifyContent: 'center',
     position: 'relative',
-    marginTop: 12,
-  },
-  askMollyCard: {
-    borderRadius: 24,
-    padding: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: '#251D3A',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-    gap: 12,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  askMollyHeader: {
+  unreadDot: {
+    position: 'absolute',
+    top: 9,
+    right: 10,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#FF5E4D',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  heroWrap: {
+    borderRadius: 26,
+    shadowColor: '#5B46D9',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  heroCard: {
+    borderRadius: 26,
+    padding: 18,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.32)',
   },
-  onlinePill: {
+  heroLeft: {
+    flex: 1,
+    gap: 6,
+  },
+  heroTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 4,
+  },
+  heroLevelText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  heroDot: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  heroSubTitle: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  heroEncourage: {
+    color: 'rgba(255,255,255,0.84)',
+    fontSize: 12.5,
+    fontWeight: '500',
+  },
+  heroBarTrack: {
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  heroBarFill: {
+    height: '100%',
+    borderRadius: 6,
+  },
+  trophyBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.32)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  trophyXp: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  shortcutsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginVertical: 2,
+  },
+  shortcutItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 7,
+  },
+  shortcutCircleOuter: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.09,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  shortcutCircleInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shortcutLabel: {
+    fontSize: 11.5,
+    lineHeight: 14,
+    minHeight: 28,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  mollyCardOuter: {
+    borderRadius: 26,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    position: 'relative',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    elevation: 5,
+  },
+  mollyFgSlot: {
+    position: 'absolute',
+    right: 6,
+    top: 4,
+    width: '38%',
+    height: 120,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  mollyFgImg: {
+    width: '100%',
+    height: '100%',
+  },
+  mollyContent: {
+    padding: 16,
+    gap: 12,
+    zIndex: 2,
+  },
+  mollyLeft: {
+    maxWidth: '64%',
+    gap: 4,
+  },
+  mollyOnlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   onlineDot: {
     width: 8,
@@ -384,18 +650,17 @@ const styles = StyleSheet.create({
   },
   onlineText: {
     fontSize: 12,
-    fontWeight: '700',
-  },
-  askTitle: {
-    fontSize: 17,
     fontWeight: '800',
-    lineHeight: 22,
   },
-  mascotOverlap: {
-    position: 'absolute',
-    right: 6,
-    top: -22,
-    zIndex: 10,
+  mollyTitle: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  mollySub: {
+    fontSize: 12.5,
+    lineHeight: 17,
+    fontWeight: '500',
   },
   inputRow: {
     flexDirection: 'row',
@@ -418,52 +683,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  toolsGrid: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  toolCard: {
-    flex: 1,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    gap: 7,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  toolIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toolLabel: {
-    fontSize: 11,
-    lineHeight: 14,
-    minHeight: 28,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  featureCard: {
+  continueCard: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 22,
     borderWidth: 1,
-    padding: 16,
+    padding: 15,
     gap: 12,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.06,
     shadowRadius: 14,
     elevation: 3,
   },
-  featureLeft: {
+  continueLeft: {
     flex: 1,
-    gap: 6,
+    gap: 5,
   },
   tagPill: {
     alignSelf: 'flex-start',
@@ -474,47 +708,21 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
-  featureTitle: {
+  continueTitle: {
     fontSize: 16,
     fontWeight: '800',
   },
-  featureSub: {
+  continueSub: {
     fontSize: 12.5,
     lineHeight: 17,
   },
-  progressTrack: {
-    height: 7,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  mountainArt: {
-    width: 86,
-    height: 82,
+  continuePlayBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  mathArt: {
-    width: 76,
-    height: 76,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  continueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  continueCta: {
-    fontSize: 13,
-    fontWeight: '700',
   },
 });

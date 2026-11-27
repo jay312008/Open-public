@@ -6,6 +6,21 @@ export const BrandAssets = {
   splashIcon: require('../../assets/images/splash-icon.png') as ImageSourcePropType,
 };
 
+export const HomeCardAssets = {
+  subjectsBg: require('../../assets/images/home/subjects_card_bg.jpg') as ImageSourcePropType,
+  subjectsFg: require('../../assets/images/home/subjects_card_fg.png') as ImageSourcePropType,
+  askMollyBg: require('../../assets/images/home/ask_molly_bg.jpg') as ImageSourcePropType,
+  askMollyFg: require('../../assets/images/home/ask_molly_fg.png') as ImageSourcePropType,
+  learningJourneyBg: require('../../assets/images/home/learning_journey_bg.jpg') as ImageSourcePropType,
+  quizGeneratorBg: require('../../assets/images/home/quiz_generator_bg.jpg') as ImageSourcePropType,
+  quizGeneratorFg: require('../../assets/images/home/quiz_generator_fg.png') as ImageSourcePropType,
+  imageAnalyzerBg: require('../../assets/images/home/image_analyzer_bg.jpg') as ImageSourcePropType,
+  imageAnalyzerFg: require('../../assets/images/home/image_analyzer_fg.png') as ImageSourcePropType,
+  bookAnalyzerBg: require('../../assets/images/home/book_analyzer_bg.jpg') as ImageSourcePropType,
+  // Temporary reuse of transparent Molly holding an open book until dedicated book_analyzer_fg is generated after image-gen quota reset
+  bookAnalyzerFg: require('../../assets/images/logo-mascot-transparent.png') as ImageSourcePropType,
+};
+
 export type CompanionId = 'molly' | 'leo' | 'pip' | 'zuri';
 
 export interface CompanionConfig {
