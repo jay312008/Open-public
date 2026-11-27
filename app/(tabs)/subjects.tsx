@@ -85,6 +85,7 @@ export default function SubjectsScreen() {
   const router = useRouter();
 
   const [levelFilter, setLevelFilter] = useState<(typeof LEVEL_FILTERS)[number]>('All Subjects');
+  const [subjectSearch, setSubjectSearch] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [customModalOpen, setCustomModalOpen] = useState(false);
@@ -92,8 +93,15 @@ export default function SubjectsScreen() {
   const [customDesc, setCustomDesc] = useState('');
 
   const filteredSubjects = subjects.filter((s) => {
-    if (levelFilter === 'All Subjects') return true;
-    return s.level.toLowerCase().includes(levelFilter.toLowerCase());
+    const levelMatch =
+      levelFilter === 'All Subjects' ||
+      s.level.toLowerCase().includes(levelFilter.toLowerCase());
+    const q = subjectSearch.trim().toLowerCase();
+    const textMatch =
+      !q ||
+      s.name.toLowerCase().includes(q) ||
+      (s.code?.toLowerCase().includes(q) ?? false);
+    return levelMatch && textMatch;
   });
 
   const activeSubject = selectedSubjectId
@@ -154,6 +162,23 @@ export default function SubjectsScreen() {
               })}
             </View>
 
+            {/* Quick Subject Search across all 40+ GCE O-Level, A-Level & University subjects */}
+            <View
+              style={[
+                styles.searchBar,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Ionicons name="search" size={18} color={colors.textMuted} />
+              <TextInput
+                value={subjectSearch}
+                onChangeText={setSubjectSearch}
+                placeholder={`Search ${filteredSubjects.length} subjects or GCE codes...`}
+                placeholderTextColor={colors.textMuted}
+                style={[styles.searchInput, { color: colors.text }]}
+              />
+            </View>
+
             {/* Vertical Illustrated Subject Cards (one after another) */}
             <View style={styles.verticalList}>
               {filteredSubjects.map((sub) => {
@@ -205,8 +230,8 @@ export default function SubjectsScreen() {
                       <Text style={[styles.subjectName, { color: colors.text }]} numberOfLines={1}>
                         {sub.name}
                       </Text>
-                      <Text style={[styles.subjectMeta, { color: colors.textSecondary }]}>
-                        {sub.topics.length} topics · {totalLessons} lessons
+                      <Text style={[styles.subjectMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {sub.code ? `${sub.code} · ` : ''}{sub.topics.length} topics · {totalLessons} lessons
                       </Text>
                       <View style={styles.progressRow}>
                         <View

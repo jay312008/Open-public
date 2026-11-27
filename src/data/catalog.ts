@@ -1,8 +1,10 @@
 import { BadgeItem, CommunityPost, PublicStudent, StudyGroup, SubjectItem } from '@/types/models';
+import { GCE_AND_UNI_SUBJECTS } from './gceCatalog';
 
 export const SUBJECT_CATALOG: SubjectItem[] = [
   {
     id: 'math',
+    code: 'GCE 0570',
     name: 'Mathematics',
     level: 'Secondary / O-Level',
     icon: 'calculator',
@@ -326,6 +328,7 @@ export const SUBJECT_CATALOG: SubjectItem[] = [
       },
     ],
   },
+  ...GCE_AND_UNI_SUBJECTS,
 ];
 
 export const DEFAULT_BADGES: BadgeItem[] = [

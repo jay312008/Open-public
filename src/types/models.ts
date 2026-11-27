@@ -61,6 +61,7 @@ export interface LessonItem {
 
 export interface SubjectItem {
   id: string;
+  code?: string;
   name: string;
   level: string;
   icon: string;
