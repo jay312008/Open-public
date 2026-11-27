@@ -18,21 +18,18 @@ export default function ProfileScreen() {
 
   const [socialModal, setSocialModal] = useState<'followers' | 'following' | null>(null);
 
-  // Smooth shared-element-style avatar arrival from top-left header into center Profile container
-  const avatarTranslateX = useSharedValue(reducedMotion ? 0 : -110);
-  const avatarTranslateY = useSharedValue(reducedMotion ? 0 : -55);
-  const avatarScale = useSharedValue(reducedMotion ? 1 : 0.45);
+  // Smooth centered entrance animation for Profile avatar without top clipping
+  const avatarTranslateY = useSharedValue(reducedMotion ? 0 : 8);
+  const avatarScale = useSharedValue(reducedMotion ? 1 : 0.9);
 
   useEffect(() => {
     if (reducedMotion) return;
-    avatarTranslateX.value = withSpring(0, { damping: 18, stiffness: 160 });
-    avatarTranslateY.value = withSpring(0, { damping: 18, stiffness: 160 });
-    avatarScale.value = withSpring(1, { damping: 16, stiffness: 150 });
-  }, [reducedMotion, avatarTranslateX, avatarTranslateY, avatarScale]);
+    avatarTranslateY.value = withSpring(0, { damping: 18, stiffness: 180 });
+    avatarScale.value = withSpring(1, { damping: 16, stiffness: 170 });
+  }, [reducedMotion, avatarTranslateY, avatarScale]);
 
   const avatarAnimStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: avatarTranslateX.value },
       { translateY: avatarTranslateY.value },
       { scale: avatarScale.value },
     ],

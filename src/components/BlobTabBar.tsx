@@ -31,8 +31,9 @@ export function BlobTabBar({ state, navigateToTab }: BottomTabBarProps) {
   const { colors, reducedMotion } = useTheme();
   const insets = useSafeAreaInsets();
   const [barWidth, setBarWidth] = useState(0);
+  const initializedRef = React.useRef(false);
 
-  const tabCount = state.routes.length;
+  const tabCount = Math.max(state.routes.length, 1);
   const tabWidth = barWidth > 0 ? barWidth / tabCount : 0;
 
   const blobX = useSharedValue(0);
@@ -42,18 +43,21 @@ export function BlobTabBar({ state, navigateToTab }: BottomTabBarProps) {
   useEffect(() => {
     if (tabWidth <= 0) return;
     const targetX = state.index * tabWidth;
-    if (reducedMotion) {
+    if (reducedMotion || !initializedRef.current) {
+      initializedRef.current = true;
       blobX.value = targetX;
+      blobScaleX.value = 1;
+      blobScaleY.value = 1;
       return;
     }
-    blobX.value = withSpring(targetX, { damping: 17, stiffness: 210, mass: 0.85 });
+    blobX.value = withSpring(targetX, { damping: 18, stiffness: 220, mass: 0.8 });
     blobScaleX.value = withSequence(
-      withTiming(1.22, { duration: 110 }),
-      withSpring(1, { damping: 14, stiffness: 220 })
+      withTiming(1.08, { duration: 95 }),
+      withSpring(1, { damping: 15, stiffness: 220 })
     );
     blobScaleY.value = withSequence(
-      withTiming(0.88, { duration: 110 }),
-      withSpring(1, { damping: 14, stiffness: 220 })
+      withTiming(0.93, { duration: 95 }),
+      withSpring(1, { damping: 15, stiffness: 220 })
     );
   }, [state.index, tabWidth, reducedMotion, blobX, blobScaleX, blobScaleY]);
 
@@ -66,7 +70,10 @@ export function BlobTabBar({ state, navigateToTab }: BottomTabBarProps) {
   }));
 
   const onLayout = (e: LayoutChangeEvent) => {
-    setBarWidth(e.nativeEvent.layout.width);
+    const nextWidth = e.nativeEvent.layout.width;
+    if (nextWidth > 0 && Math.abs(nextWidth - barWidth) > 0.5) {
+      setBarWidth(nextWidth);
+    }
   };
 
   return (
@@ -94,7 +101,7 @@ export function BlobTabBar({ state, navigateToTab }: BottomTabBarProps) {
             pointerEvents="none"
             style={[
               styles.blobContainer,
-              { width: tabWidth },
+              { width: Math.max(tabWidth - 10, 0) },
               blobStyle,
             ]}
           >
@@ -171,6 +178,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     borderWidth: 1,
     position: 'relative',
+    overflow: 'hidden',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 18,
@@ -180,10 +188,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 6,
     bottom: 6,
-    left: 0,
+    left: 5,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
   },
   blobShape: {
     width: '100%',

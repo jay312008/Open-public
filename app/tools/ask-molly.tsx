@@ -109,6 +109,33 @@ export default function AskMollyScreen() {
                 </View>
               );
             })}
+            {messages.length === 1 && !loading && (
+              <View style={styles.suggestionsWrap}>
+                <Text style={[styles.suggestionsTitle, { color: colors.textSecondary }]}>
+                  Try asking {companion.name}:
+                </Text>
+                <View style={styles.suggestionsGrid}>
+                  {[
+                    'Explain Quadratic Equations step by step',
+                    'Quiz me on Chemical Bonding',
+                    'How do I prepare for my exams?',
+                    "Summarize Newton's 3 Laws of Motion",
+                  ].map((prompt) => (
+                    <AnimatedPressable
+                      key={prompt}
+                      onPress={() => sendMessage(prompt)}
+                      style={[
+                        styles.suggestionChip,
+                        { backgroundColor: colors.surface, borderColor: colors.border },
+                      ]}
+                    >
+                      <Ionicons name="sparkles-outline" size={14} color={colors.coral} />
+                      <Text style={[styles.suggestionText, { color: colors.text }]}>{prompt}</Text>
+                    </AnimatedPressable>
+                  ))}
+                </View>
+              </View>
+            )}
             {loading && (
               <Text style={[styles.typing, { color: colors.textMuted }]}>
                 {companion.name} is thinking...
@@ -175,5 +202,31 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  suggestionsWrap: {
+    marginTop: 8,
+    gap: 10,
+  },
+  suggestionsTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  suggestionsGrid: {
+    gap: 8,
+  },
+  suggestionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  suggestionText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    flex: 1,
   },
 });

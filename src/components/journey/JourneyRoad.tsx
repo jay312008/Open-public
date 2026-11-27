@@ -47,7 +47,7 @@ export function JourneyRoad({
 }: JourneyRoadProps) {
   const { width: screenWidth } = useWindowDimensions();
   const { colors, isDark } = useTheme();
-  const canvasWidth = Math.min(screenWidth, 480);
+  const canvasWidth = Math.max(280, Math.min(screenWidth - 32, 460));
 
   const isEmpty = levels.length === 0;
   const displayCount = isEmpty ? 3 : levels.length;

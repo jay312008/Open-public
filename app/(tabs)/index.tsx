@@ -204,7 +204,7 @@ export default function HomeScreen() {
                 <View style={[styles.toolIconCircle, { backgroundColor: tool.bg }]}>
                   <Ionicons name={tool.icon} size={20} color={tool.color} />
                 </View>
-                <Text style={[styles.toolLabel, { color: colors.text }]} numberOfLines={1}>
+                <Text style={[styles.toolLabel, { color: colors.text }]} numberOfLines={2}>
                   {tool.label}
                 </Text>
               </AnimatedPressable>
@@ -444,6 +444,8 @@ const styles = StyleSheet.create({
   },
   toolLabel: {
     fontSize: 11,
+    lineHeight: 14,
+    minHeight: 28,
     fontWeight: '700',
     textAlign: 'center',
   },

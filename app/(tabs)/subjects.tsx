@@ -38,7 +38,7 @@ export default function SubjectsScreen() {
         <BrandHeader />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.headerRow}>
-            <View>
+            <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={[styles.title, { color: colors.text }]}>My Subjects</Text>
               <Text style={[styles.sub, { color: colors.textSecondary }]}>
                 Explore topics, lessons, or add custom class topics
