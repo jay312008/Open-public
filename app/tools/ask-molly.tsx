@@ -19,8 +19,9 @@ import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { CompanionAvatar } from '@/components/CompanionAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
-import { askMollyAI } from '@/lib/aiGateway';
+import { askMollyAI, MollyChatReply } from '@/lib/aiGateway';
 import { getCompanionById } from '@/constants/assets';
+import { ChatVisualWidget, ChatWidgetSpec } from '@/components/chat/ChatVisualWidget';
 
 interface RichStep {
   title: string;
@@ -35,7 +36,8 @@ interface ChatMsg {
   equation?: string;
   steps?: RichStep[];
   example?: string;
-  showParabolaGraph?: boolean;
+  tip?: string;
+  widgets?: ChatWidgetSpec[];
   timestamp: string;
 }
 
@@ -43,30 +45,39 @@ function nowTime(): string {
   return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function enrichMollyResponse(
+function buildRichMessage(
   question: string,
-  replyText: string,
-  equation: string | undefined,
+  reply: MollyChatReply,
   firstName: string
 ): Omit<ChatMsg, 'id' | 'role' | 'timestamp'> {
-  const q = `${question} ${replyText}`.toLowerCase();
-  if (q.includes('quadratic') || q.includes('parabola')) {
-    return {
-      heading: `Sure, ${firstName}! Let's break it down step by step.`,
-      text: replyText,
-      equation: equation ?? 'ax² + bx + c = 0   where a ≠ 0',
-      steps: [
-        { title: 'Identify a, b and c.', detail: 'These are the coefficients in the equation.' },
-        { title: 'Find the solutions (roots).', detail: 'Factor or use x = (-b ± √(b² - 4ac)) / 2a.' },
-        { title: 'Interpret the result.', detail: 'The roots are the x-values where the graph crosses the x-axis.' },
-      ],
-      example: 'For x² - 5x + 6 = 0, the solutions are x = 2 and x = 3.',
-      showParabolaGraph: true,
-    };
+  const q = `${question} ${reply.text}`.toLowerCase();
+  const widgets: ChatWidgetSpec[] = reply.widgets ? [...reply.widgets] : [];
+
+  // Ensure contextual visual widgets appear automatically if the model omitted them on visual topics
+  if (widgets.length === 0) {
+    if (q.includes('wave')) {
+      widgets.push(
+        { type: 'wave', title: 'Interactive Wave & Ruler Board', variant: 'transverse' },
+        { type: 'calculator', title: 'Wave Speed Calculator', variant: 'wave' }
+      );
+    } else if (q.includes('quadratic') || q.includes('parabola')) {
+      widgets.push(
+        { type: 'parabola', title: 'Interactive Parabola Graph' },
+        { type: 'calculator', title: 'Quadratic Root Calculator' }
+      );
+    } else if (q.includes('triangle') || q.includes('pythagoras') || q.includes('circle')) {
+      widgets.push({ type: 'geometry', variant: q.includes('circle') ? 'circle' : 'triangle' });
+    }
   }
+
   return {
-    text: replyText,
-    equation,
+    heading: reply.heading ?? (reply.steps ? `Sure, ${firstName}! Let's break it down step by step.` : undefined),
+    text: reply.text,
+    equation: reply.equation,
+    steps: reply.steps,
+    example: reply.example,
+    tip: reply.tip,
+    widgets: widgets.length > 0 ? widgets : undefined,
   };
 }
 
@@ -86,7 +97,7 @@ export default function AskMollyScreen() {
       id: 'welcome',
       role: 'assistant',
       heading: `Hi ${firstName}! 👋 I'm ${companion.name}.`,
-      text: 'Ask me any homework question, formula, or exam topic — I will break it down step by step with examples and graphs.',
+      text: 'Ask me any topic — I will reply in clean steps and draw interactive graphs, wave boards with rulers, geometry diagrams, and mini calculators right inside the chat.',
       timestamp: nowTime(),
     },
   ]);
@@ -109,7 +120,7 @@ export default function AskMollyScreen() {
     setLoading(true);
 
     const res = await askMollyAI(clean);
-    const enriched = enrichMollyResponse(clean, res.data.text, res.data.equation, firstName);
+    const enriched = buildRichMessage(clean, res.data, firstName);
     const botMsg: ChatMsg = {
       id: `a-${Date.now()}`,
       role: 'assistant',
@@ -324,45 +335,11 @@ export default function AskMollyScreen() {
                       </View>
                     )}
 
-                    {msg.showParabolaGraph && (
-                      <View
-                        style={[
-                          styles.graphBox,
-                          { backgroundColor: isDark ? '#1A2420' : '#FAFAFF', borderColor: colors.border },
-                        ]}
-                      >
-                        <Svg width={210} height={120} viewBox="0 0 210 120">
-                          <Line x1={18} y1={92} x2={192} y2={92} stroke={colors.textMuted} strokeWidth={1.6} />
-                          <Line x1={105} y1={14} x2={105} y2={112} stroke={colors.textMuted} strokeWidth={1.6} />
-                          <Polygon points="192,92 185,88 185,96" fill={colors.textMuted} />
-                          <Polygon points="105,12 101,19 109,19" fill={colors.textMuted} />
-                          <Path
-                            d="M 58 20 Q 105 142 152 20"
-                            fill="none"
-                            stroke="#7C3AED"
-                            strokeWidth={2.8}
-                            strokeLinecap="round"
-                          />
-                          <Circle cx={84} cy={92} r={3.5} fill="#7C3AED" />
-                          <Circle cx={126} cy={92} r={3.5} fill="#7C3AED" />
-                          <Circle cx={105} cy={82} r={3.5} fill="#FF6B4A" />
-                          <SvgText x={194} y={95} fill={colors.textSecondary} fontSize={11} fontWeight="bold">
-                            x
-                          </SvgText>
-                          <SvgText x={111} y={18} fill={colors.textSecondary} fontSize={11} fontWeight="bold">
-                            y
-                          </SvgText>
-                        </Svg>
-                        <View
-                          style={[
-                            styles.graphCaption,
-                            { backgroundColor: isDark ? 'rgba(139,92,246,0.2)' : '#F1EBFE' },
-                          ]}
-                        >
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.purple }}>
-                            Graph of y = x² - 4x + 3
-                          </Text>
-                        </View>
+                    {msg.widgets && msg.widgets.length > 0 && (
+                      <View style={{ gap: 10 }}>
+                        {msg.widgets.map((w, wIdx) => (
+                          <ChatVisualWidget key={`${msg.id}-w-${wIdx}`} widget={w} />
+                        ))}
                       </View>
                     )}
 
@@ -381,6 +358,21 @@ export default function AskMollyScreen() {
                       </View>
                     )}
 
+                    {msg.tip && (
+                      <View
+                        style={[
+                          styles.exampleBox,
+                          { backgroundColor: isDark ? 'rgba(34,197,94,0.16)' : '#ECFDF3' },
+                        ]}
+                      >
+                        <Ionicons name="sparkles" size={17} color={colors.brandGreen} />
+                        <Text style={[styles.exampleText, { color: colors.text }]}>
+                          <Text style={{ fontWeight: '800', color: colors.mintDark }}>Tip: </Text>
+                          {msg.tip}
+                        </Text>
+                      </View>
+                    )}
+
                     <Text style={[styles.botTime, { color: colors.textMuted }]}>{msg.timestamp}</Text>
                   </View>
                 </View>
@@ -390,9 +382,10 @@ export default function AskMollyScreen() {
             {messages.length === 1 && !loading && (
               <View style={styles.starterWrap}>
                 {[
+                  'Describe waves with examples and a diagram',
                   'Can you explain quadratic equations?',
-                  'Quiz me on Chemical Bonding',
-                  "Summarize Newton's Laws of Motion",
+                  'Explain the Pythagorean theorem with a triangle',
+                  'Explain Chemical Bonding',
                 ].map((prompt) => (
                   <AnimatedPressable
                     key={prompt}

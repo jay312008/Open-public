@@ -35,15 +35,30 @@ async function postToGateway<T>(path: string, body: Record<string, unknown>): Pr
   }
 }
 
+export interface MollyChatReply {
+  heading?: string;
+  text: string;
+  equation?: string;
+  steps?: { title: string; detail: string }[];
+  example?: string;
+  tip?: string;
+  widgets?: {
+    type: 'wave' | 'parabola' | 'geometry' | 'calculator' | 'science_diagram';
+    title?: string;
+    caption?: string;
+    variant?: string;
+  }[];
+}
+
 export async function askMollyAI(
   question: string,
   subject?: string
-): Promise<AIResponse<{ text: string; equation?: string }>> {
-  const remote = await postToGateway<{ text: string; equation?: string }>('/chat', {
+): Promise<AIResponse<MollyChatReply>> {
+  const remote = await postToGateway<MollyChatReply>('/chat', {
     question,
     subject,
   });
-  if (remote) {
+  if (remote && remote.text) {
     return { data: remote, source: 'live-gateway' };
   }
 
@@ -56,16 +71,67 @@ export async function askMollyAI(
     return {
       source: 'local-prototype',
       data: {
-        text: "Hey there! 👋 I'm Molly, your study buddy. What are we working on today?\n\nYou can ask me about Quadratic Equations, Chemical Bonding, Newton's Laws, Photosynthesis, or exam study tips.\n\n(Local prototype mode — connect your server-side AI gateway for live NVIDIA AI answers.)",
+        heading: "Hey there! 👋 I'm Molly.",
+        text: 'What are we studying today? Try asking me to describe waves, explain quadratic equations, draw a right triangle, or explain chemical bonding!',
       },
     };
   }
-  if (q.includes('quadratic')) {
+  if (q.includes('wave')) {
     return {
       source: 'local-prototype',
       data: {
-        text: 'A quadratic equation has the standard form ax² + bx + c = 0 where a ≠ 0. You can solve it by factoring, completing the square, or using the quadratic formula. The discriminant Δ = b² - 4ac tells you how many real roots exist.',
-        equation: 'x = (-b ± √(b² - 4ac)) / 2a',
+        heading: "Let's break down Waves step by step!",
+        text: 'A wave is a disturbance that transfers energy from one place to another without permanently moving matter.',
+        equation: 'v = f × λ   (Wave Speed = Frequency × Wavelength)',
+        steps: [
+          { title: 'Transverse Waves', detail: 'Particles vibrate perpendicular (up & down) to wave travel — e.g., light and water ripples.' },
+          { title: 'Longitudinal Waves', detail: 'Particles vibrate parallel (back & forth) in compressions and rarefactions — e.g., sound waves.' },
+          { title: 'Key Measurements', detail: 'Amplitude (A) measures wave height; Wavelength (λ) is the distance between two crests.' },
+        ],
+        example: 'If a wave has frequency f = 50 Hz and wavelength λ = 2 m, its speed is v = 50 × 2 = 100 m/s.',
+        tip: 'Use the interactive ruler board & calculator below to test different frequencies and wave speeds!',
+        widgets: [
+          { type: 'wave', title: 'Interactive Wave & Ruler Board', variant: 'transverse', caption: 'Toggle Transverse / Longitudinal or adjust Frequency & Amplitude' },
+          { type: 'calculator', title: 'Wave Speed Calculator', variant: 'wave' },
+        ],
+      },
+    };
+  }
+  if (q.includes('quadratic') || q.includes('parabola')) {
+    return {
+      source: 'local-prototype',
+      data: {
+        heading: "Sure! Let's break down Quadratic Equations step by step.",
+        text: 'A quadratic equation is a second-degree polynomial equation in standard form:',
+        equation: 'ax² + bx + c = 0   where a ≠ 0',
+        steps: [
+          { title: 'Identify a, b and c.', detail: 'These are the coefficients in the equation.' },
+          { title: 'Find the solutions (roots).', detail: 'Factor or use x = (-b ± √(b² - 4ac)) / 2a.' },
+          { title: 'Interpret the graph.', detail: 'The roots are where the parabola crosses the x-axis.' },
+        ],
+        example: 'For x² - 5x + 6 = 0, factoring gives (x - 2)(x - 3) = 0, so x = 2 and x = 3.',
+        widgets: [
+          { type: 'parabola', title: 'Interactive Parabola Graph' },
+          { type: 'calculator', title: 'Quadratic Root Calculator' },
+        ],
+      },
+    };
+  }
+  if (q.includes('triangle') || q.includes('pythagoras') || q.includes('circle') || q.includes('geometry')) {
+    const isCircle = q.includes('circle');
+    return {
+      source: 'local-prototype',
+      data: {
+        heading: isCircle ? "Let's explore Circle Geometry!" : "Let's explore the Pythagorean Theorem!",
+        text: isCircle
+          ? 'A circle is the set of all points at a fixed distance (radius r) from its center.'
+          : 'In any right-angled triangle, the square of the hypotenuse equals the sum of the squares of the other two sides.',
+        equation: isCircle ? 'Area = πr²   |   Circumference = 2πr' : 'a² + b² = c²',
+        steps: [
+          { title: 'Identify known lengths', detail: isCircle ? 'Measure the radius r from center to edge.' : 'Label the two perpendicular sides a and b.' },
+          { title: 'Apply the formula', detail: isCircle ? 'Substitute r into πr² or 2πr.' : 'Compute √(a² + b²) to find hypotenuse c.' },
+        ],
+        widgets: [{ type: 'geometry', variant: isCircle ? 'circle' : 'triangle' }],
       },
     };
   }
@@ -73,17 +139,14 @@ export async function askMollyAI(
     return {
       source: 'local-prototype',
       data: {
-        text: 'Chemical bonding happens so atoms achieve a stable outer electron shell. Ionic bonds transfer electrons (usually metal + non-metal, like NaCl), while covalent bonds share electron pairs between non-metals (like H₂O).',
-        equation: 'Na → Na⁺ + e⁻   |   Cl + e⁻ → Cl⁻   ⇒   NaCl',
-      },
-    };
-  }
-  if (q.includes('force') || q.includes('newton') || q.includes('motion') || q.includes('physics')) {
-    return {
-      source: 'local-prototype',
-      data: {
-        text: "Newton's Laws of Motion:\n1. Inertia — objects stay at rest or in uniform motion unless acted on by a net force.\n2. F = m × a — acceleration increases with net force and decreases with mass.\n3. Action–Reaction — every force has an equal and opposite reaction force.",
-        equation: 'F = m × a   (Newtons = kg · m/s²)',
+        heading: "Let's master Chemical Bonding!",
+        text: 'Atoms bond so they can achieve a full, stable outer electron shell.',
+        equation: 'Na → Na⁺ + e⁻   |   H — O — H (Covalent)',
+        steps: [
+          { title: 'Ionic Bonding', detail: 'A metal transfers electrons to a non-metal (e.g., NaCl).' },
+          { title: 'Covalent Bonding', detail: 'Two non-metals share electron pairs (e.g., H₂O).' },
+        ],
+        widgets: [{ type: 'science_diagram', variant: 'bonding' }],
       },
     };
   }
@@ -91,23 +154,18 @@ export async function askMollyAI(
     return {
       source: 'local-prototype',
       data: {
-        text: 'Photosynthesis happens inside plant chloroplasts: chlorophyll absorbs sunlight to turn carbon dioxide and water into glucose (chemical energy) and oxygen.',
+        heading: "How Photosynthesis Works",
+        text: 'Plant chloroplasts use chlorophyll to capture sunlight and convert CO₂ and water into glucose and oxygen.',
         equation: '6CO₂ + 6H₂O + light → C₆H₁₂O₆ + 6O₂',
-      },
-    };
-  }
-  if (q.includes('exam') || q.includes('prepare') || q.includes('study plan') || q.includes('jamb') || q.includes('waec')) {
-    return {
-      source: 'local-prototype',
-      data: {
-        text: 'Best way to prepare for exams:\n1. Open the Journey tab and generate a roadmap with your real exam date.\n2. Study in focused 25-minute blocks and test yourself with Quiz Generator right after.\n3. Spend extra time on weak topics flagged in Progress & Exam Predictor.',
+        widgets: [{ type: 'science_diagram', variant: 'photosynthesis' }],
       },
     };
   }
   return {
     source: 'local-prototype',
     data: {
-      text: `I'm currently in local prototype mode, so I can give full breakdowns on topics like Quadratic Equations, Chemical Bonding, Newton's Laws, Photosynthesis, and Exam Prep.\n\nFor live AI answers to "${question}", deploy the server-side NVIDIA AI gateway in supabase/functions/ai-gateway and set EXPO_PUBLIC_AI_GATEWAY_URL.`,
+      heading: `Let's look at "${question}"`,
+      text: `I'm ready to help! On your live Vercel deployment, NVIDIA AI answers any topic in structured steps and interactive boards. In offline preview, try asking about Waves, Quadratic Equations, Triangles/Circles, Chemical Bonding, or Photosynthesis!`,
     },
   };
 }

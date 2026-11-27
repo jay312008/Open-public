@@ -85,19 +85,28 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       const question = String(body.question ?? '').trim();
       const subject = body.subject ? String(body.subject) : 'general studies';
 
-      const reply = await callNvidia([
-        {
-          role: 'system',
-          content:
-            'You are Molly, a warm, friendly, encouraging AI tutor inside the LearnyMol educational mobile app. Respond naturally to greetings, and give clear, concise, step-by-step student-friendly explanations for study questions.',
-        },
-        {
-          role: 'user',
-          content: subject !== 'general studies' ? `[Subject: ${subject}] ${question}` : question,
-        },
-      ]);
+      const reply = await callNvidia(
+        [
+          {
+            role: 'system',
+            content:
+              'You are Molly, a warm, orderly AI tutor in LearnyMol. Return ONLY raw valid JSON (no markdown fences) with schema: { "heading": string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: [{ "type": "wave"|"parabola"|"geometry"|"calculator"|"science_diagram", "title"?: string, "caption"?: string, "variant"?: string }] }. Keep text concise and orderly, never scattered. Include 1-2 relevant widgets when discussing waves (type:"wave" + type:"calculator", variant:"wave"), quadratics/graphs (type:"parabola" + type:"calculator"), geometry/triangles/circles (type:"geometry"), or bonding/photosynthesis (type:"science_diagram"). For casual greetings like "Hi", keep steps and widgets omitted.',
+          },
+          {
+            role: 'user',
+            content: subject !== 'general studies' ? `[Subject: ${subject}] ${question}` : question,
+          },
+        ],
+        1050
+      );
 
-      res.status(200).json({ text: reply });
+      try {
+        const cleaned = reply.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+        const parsed = JSON.parse(cleaned);
+        res.status(200).json(parsed);
+      } catch {
+        res.status(200).json({ text: reply });
+      }
       return;
     }
 
