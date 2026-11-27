@@ -51,6 +51,9 @@ export default function CommunityScreen() {
   const [grpDesc, setGrpDesc] = useState('');
   const [grpPrivate, setGrpPrivate] = useState(true);
   const [grpBilling, setGrpBilling] = useState<'personal' | 'group_pool' | 'sponsored'>('personal');
+  const [grpSearch, setGrpSearch] = useState('');
+  const [grpLevelFilter, setGrpLevelFilter] = useState<'All' | 'O-Level' | 'A-Level' | 'University'>('All');
+  const [grpVisFilter, setGrpVisFilter] = useState<'All' | 'Public' | 'Private'>('All');
 
   const pickImage = async () => {
     try {
@@ -353,7 +356,80 @@ export default function CommunityScreen() {
                 </View>
               )}
 
-              {groups.map((grp) => (
+              {/* Search & Separate Academic Level / Visibility Filters (Part 12.2 & 12.3) */}
+              <View style={[styles.postCard, { backgroundColor: colors.surface, borderColor: colors.border, gap: 8, paddingVertical: 12 }]}>
+                <TextInput
+                  value={grpSearch}
+                  onChangeText={setGrpSearch}
+                  placeholder="Search study groups by name or subject..."
+                  placeholderTextColor={colors.textMuted}
+                  style={{
+                    color: colors.text,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    fontSize: 13.5,
+                  }}
+                />
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['All', 'O-Level', 'A-Level', 'University'] as const).map((lvl) => (
+                    <AnimatedPressable
+                      key={lvl}
+                      onPress={() => setGrpLevelFilter(lvl)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        alignItems: 'center',
+                        backgroundColor: grpLevelFilter === lvl ? colors.coral : colors.surfaceMuted,
+                      }}
+                    >
+                      <Text style={{ color: grpLevelFilter === lvl ? '#FFFFFF' : colors.text, fontSize: 11, fontWeight: '800' }}>
+                        {lvl}
+                      </Text>
+                    </AnimatedPressable>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['All', 'Public', 'Private'] as const).map((vis) => (
+                    <AnimatedPressable
+                      key={vis}
+                      onPress={() => setGrpVisFilter(vis)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        alignItems: 'center',
+                        backgroundColor: grpVisFilter === vis ? colors.purple : colors.surfaceMuted,
+                      }}
+                    >
+                      <Text style={{ color: grpVisFilter === vis ? '#FFFFFF' : colors.text, fontSize: 11, fontWeight: '800' }}>
+                        {vis}
+                      </Text>
+                    </AnimatedPressable>
+                  ))}
+                </View>
+              </View>
+
+              {groups
+                .filter((g) => {
+                  const q = grpSearch.trim().toLowerCase();
+                  const matchText =
+                    !q ||
+                    g.name.toLowerCase().includes(q) ||
+                    g.subject.toLowerCase().includes(q) ||
+                    g.description.toLowerCase().includes(q);
+                  const matchVis =
+                    grpVisFilter === 'All' ||
+                    (grpVisFilter === 'Private' ? g.isPrivate : !g.isPrivate);
+                  const matchLvl =
+                    grpLevelFilter === 'All' ||
+                    `${g.name} ${g.description}`.toLowerCase().includes(grpLevelFilter.toLowerCase());
+                  return matchText && matchVis && matchLvl;
+                })
+                .map((grp) => (
                 <AnimatedPressable
                   key={grp.id}
                   onPress={() => router.push(`/community/group/${grp.id}`)}
