@@ -1,9 +1,19 @@
 import { LiveLessonStep } from '@/types/models';
 
-const AI_GATEWAY_URL = process.env.EXPO_PUBLIC_AI_GATEWAY_URL ?? '';
+function resolveGatewayUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_AI_GATEWAY_URL ?? '';
+  if (configured && !configured.includes('your-ai-gateway') && !configured.includes('your-project-id')) {
+    return configured.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location?.hostname?.endsWith('.vercel.app')) {
+    return '/api/ai';
+  }
+  return '';
+}
 
-export const isLiveAIGatewayConfigured =
-  Boolean(AI_GATEWAY_URL) && !AI_GATEWAY_URL.includes('your-ai-gateway');
+const AI_GATEWAY_URL = resolveGatewayUrl();
+
+export const isLiveAIGatewayConfigured = Boolean(AI_GATEWAY_URL);
 
 export interface AIResponse<T> {
   data: T;
