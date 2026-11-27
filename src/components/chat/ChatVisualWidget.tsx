@@ -83,21 +83,25 @@ export function ChatVisualWidget({ widget }: { widget: ChatWidgetSpec }) {
   }
 }
 
-/* 1. DYNAMIC MATH FUNCTION PLOTTER — plots ANY equation (linear, quadratic, trig, cubic, exp, etc.) + editable live! */
+/* 1. DYNAMIC MATH FUNCTION PLOTTER — plots ANY equation (linear, quadratic, trig, cubic, exp, etc.) + live coordinate tracer! */
 function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
   const { colors, isDark } = useTheme();
-  const [expr, setExpr] = useState(widget.expression || 'x^2 - 4*x + 3');
+  const initialExpr = (widget.expression ?? '').trim();
+  const [expr, setExpr] = useState(initialExpr);
   const [xRange, setXRange] = useState(Math.max(Math.abs(widget.xMin ?? -6), Math.abs(widget.xMax ?? 6), 5));
+  const [traceX, setTraceX] = useState<number>(0);
 
-  const W = 264;
-  const H = 160;
-  const pad = 22;
+  if (!initialExpr && !expr) return null;
 
-  const { segments, originX, originY, yMin, yMax, mappedPoints } = useMemo(() => {
+  const W = 320;
+  const H = 200;
+  const pad = 28;
+
+  const { segments, originX, originY, yMin, yMax, mappedPoints, tracePt, xTicks, yTicks } = useMemo(() => {
     const xMinVal = -xRange;
     const xMaxVal = xRange;
     const samples: { x: number; y: number }[] = [];
-    const steps = 120;
+    const steps = 160;
     for (let i = 0; i <= steps; i++) {
       const x = xMinVal + (i / steps) * (xMaxVal - xMinVal);
       const y = evaluateMathExpression(expr, { x });
@@ -137,6 +141,25 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
         label: p.label ?? `(${p.x},${p.y})`,
       }));
 
+    const clampedTraceX = Math.max(xMinVal, Math.min(xMaxVal, traceX));
+    const ty = evaluateMathExpression(expr, { x: clampedTraceX });
+    const tPt =
+      Number.isFinite(ty) && ty >= yMinVal && ty <= yMaxVal
+        ? { x: clampedTraceX, y: ty, px: toPxX(clampedTraceX), py: toPxY(ty) }
+        : { x: clampedTraceX, y: ty, px: toPxX(clampedTraceX), py: toPxY(0) };
+
+    const xTickStep = xRange <= 6 ? 2 : Math.ceil(xRange / 3);
+    const xT: { val: number; px: number }[] = [];
+    for (let v = -xRange; v <= xRange; v += xTickStep) {
+      if (v !== 0) xT.push({ val: v, px: toPxX(v) });
+    }
+    const ySpan = yMaxVal - yMinVal;
+    const yTickStep = Math.max(1, Math.round(ySpan / 4));
+    const yT: { val: number; py: number }[] = [];
+    for (let v = Math.ceil(yMinVal / yTickStep) * yTickStep; v <= yMaxVal; v += yTickStep) {
+      if (v !== 0) yT.push({ val: v, py: toPxY(v) });
+    }
+
     return {
       segments: segs,
       originX: Math.max(pad, Math.min(W - pad, toPxX(0))),
@@ -144,8 +167,11 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
       yMin: yMinVal,
       yMax: yMaxVal,
       mappedPoints: pts,
+      tracePt: tPt,
+      xTicks: xT,
+      yTicks: yT,
     };
-  }, [expr, xRange, widget.yMin, widget.yMax, widget.points]);
+  }, [expr, xRange, traceX, widget.yMin, widget.yMax, widget.points]);
 
   return (
     <View
@@ -160,13 +186,13 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
         </Text>
         <View style={styles.pillToggleRow}>
           <AnimatedPressable
-            onPress={() => setXRange((r) => Math.max(3, r - 2))}
+            onPress={() => setXRange((r) => Math.max(2, r - 2))}
             style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
           >
             <Text style={{ fontSize: 10, fontWeight: '800', color: colors.text }}>Zoom +</Text>
           </AnimatedPressable>
           <AnimatedPressable
-            onPress={() => setXRange((r) => Math.min(16, r + 2))}
+            onPress={() => setXRange((r) => Math.min(20, r + 2))}
             style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
           >
             <Text style={{ fontSize: 10, fontWeight: '800', color: colors.text }}>Zoom -</Text>
@@ -174,7 +200,7 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
         </View>
       </View>
 
-      {/* Editable live equation bar so student can coordinate/change the graph */}
+      {/* Editable live equation bar so student can type ANY equation and watch it redraw */}
       <View
         style={[
           styles.eqInputRow,
@@ -185,42 +211,72 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
         <TextInput
           value={expr}
           onChangeText={setExpr}
-          placeholder="e.g. sin(x), 2*x+3, x^2-4"
+          placeholder="e.g. sin(x), 2*x+3, x^3-2*x"
           placeholderTextColor={colors.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
           style={[styles.eqInput, { color: colors.text }]}
         />
       </View>
 
-      <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-        {/* Subtle grid */}
-        {[0.25, 0.5, 0.75].map((f) => (
-          <React.Fragment key={f}>
-            <Line
-              x1={pad + f * (W - pad * 2)}
-              y1={pad}
-              x2={pad + f * (W - pad * 2)}
-              y2={H - pad}
-              stroke={colors.border}
-              strokeWidth={0.8}
-              strokeDasharray="3,3"
-            />
-            <Line
-              x1={pad}
-              y1={pad + f * (H - pad * 2)}
-              x2={W - pad}
-              y2={pad + f * (H - pad * 2)}
-              stroke={colors.border}
-              strokeWidth={0.8}
-              strokeDasharray="3,3"
-            />
-          </React.Fragment>
+      <Svg width="100%" height={200} viewBox={`0 0 ${W} ${H}`}>
+        {/* Numbered grid lines */}
+        {xTicks.map((t) => (
+          <Line
+            key={`gx-${t.val}`}
+            x1={t.px}
+            y1={pad}
+            x2={t.px}
+            y2={H - pad}
+            stroke={colors.border}
+            strokeWidth={0.8}
+            strokeDasharray="3,3"
+          />
+        ))}
+        {yTicks.map((t) => (
+          <Line
+            key={`gy-${t.val}`}
+            x1={pad}
+            y1={t.py}
+            x2={W - pad}
+            y2={t.py}
+            stroke={colors.border}
+            strokeWidth={0.8}
+            strokeDasharray="3,3"
+          />
         ))}
 
         {/* X & Y Axes */}
-        <Line x1={pad} y1={originY} x2={W - pad} y2={originY} stroke={colors.textMuted} strokeWidth={1.5} />
-        <Line x1={originX} y1={pad} x2={originX} y2={H - pad} stroke={colors.textMuted} strokeWidth={1.5} />
+        <Line x1={pad} y1={originY} x2={W - pad} y2={originY} stroke={colors.textMuted} strokeWidth={1.6} />
+        <Line x1={originX} y1={pad} x2={originX} y2={H - pad} stroke={colors.textMuted} strokeWidth={1.6} />
         <Polygon points={`${W - pad},${originY} ${W - pad - 6},${originY - 3.5} ${W - pad - 6},${originY + 3.5}`} fill={colors.textMuted} />
         <Polygon points={`${originX},${pad} ${originX - 3.5},${pad + 6} ${originX + 3.5},${pad + 6}`} fill={colors.textMuted} />
+
+        {/* Numbered Axis Ticks */}
+        {xTicks.map((t) => (
+          <SvgText
+            key={`tx-${t.val}`}
+            x={t.px}
+            y={Math.min(H - 8, originY + 13)}
+            fontSize={9}
+            fill={colors.textMuted}
+            textAnchor="middle"
+          >
+            {t.val}
+          </SvgText>
+        ))}
+        {yTicks.map((t) => (
+          <SvgText
+            key={`ty-${t.val}`}
+            x={Math.max(12, originX - 6)}
+            y={t.py + 3}
+            fontSize={9}
+            fill={colors.textMuted}
+            textAnchor="end"
+          >
+            {t.val}
+          </SvgText>
+        ))}
 
         {/* Dynamic Function Curve */}
         {segments.map((d, idx) => (
@@ -229,7 +285,7 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
             d={d}
             fill="none"
             stroke="#7C3AED"
-            strokeWidth={2.6}
+            strokeWidth={2.8}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -238,12 +294,28 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
         {/* Key Highlighted Points */}
         {mappedPoints.map((pt, i) => (
           <React.Fragment key={i}>
-            <Circle cx={pt.px} cy={pt.py} r={4} fill="#FF6B4A" />
-            <SvgText x={pt.px + 5} y={pt.py - 5} fontSize={9} fontWeight="bold" fill="#FF6B4A">
+            <Circle cx={pt.px} cy={pt.py} r={4} fill="#16A34A" />
+            <SvgText x={pt.px + 5} y={pt.py - 5} fontSize={9} fontWeight="bold" fill="#16A34A">
               {pt.label}
             </SvgText>
           </React.Fragment>
         ))}
+
+        {/* Live Interactive Tracer Dot */}
+        {Number.isFinite(tracePt.y) && (
+          <>
+            <Line
+              x1={tracePt.px}
+              y1={originY}
+              x2={tracePt.px}
+              y2={tracePt.py}
+              stroke="#FF6B4A"
+              strokeWidth={1.2}
+              strokeDasharray="3,3"
+            />
+            <Circle cx={tracePt.px} cy={tracePt.py} r={5.5} fill="#FF6B4A" stroke="#FFFFFF" strokeWidth={1.8} />
+          </>
+        )}
 
         <SvgText x={W - pad + 4} y={originY + 3} fontSize={10} fontWeight="bold" fill={colors.textSecondary}>
           x
@@ -251,12 +323,30 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
         <SvgText x={originX + 5} y={pad + 4} fontSize={10} fontWeight="bold" fill={colors.textSecondary}>
           y
         </SvgText>
-        <SvgText x={pad} y={H - 6} fontSize={8.5} fill={colors.textMuted}>
-          x: [{-xRange}, {xRange}]  y: [{yMin}, {yMax}]
-        </SvgText>
       </Svg>
 
-      {widget.caption && <Text style={[styles.caption, { color: colors.purple }]}>{widget.caption}</Text>}
+      {/* Interactive Point Tracer Bar */}
+      <View style={styles.boardTop}>
+        <AnimatedPressable
+          onPress={() => setTraceX((v) => Math.max(-xRange, Number((v - 0.5).toFixed(2))))}
+          style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
+        >
+          <Text style={{ fontSize: 10.5, fontWeight: '800', color: colors.text }}>← Trace</Text>
+        </AnimatedPressable>
+        <Text style={{ fontSize: 11.5, fontWeight: '800', color: colors.coral }}>
+          x = {tracePt.x.toFixed(1)}, y = {Number.isFinite(tracePt.y) ? tracePt.y.toFixed(2) : 'undef'}
+        </Text>
+        <AnimatedPressable
+          onPress={() => setTraceX((v) => Math.min(xRange, Number((v + 0.5).toFixed(2))))}
+          style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
+        >
+          <Text style={{ fontSize: 10.5, fontWeight: '800', color: colors.text }}>Trace →</Text>
+        </AnimatedPressable>
+      </View>
+
+      <Text style={[styles.caption, { color: colors.purple }]}>
+        {widget.caption ?? `Range x ∈ [-${xRange}, ${xRange}], y ∈ [${yMin}, ${yMax}]`}
+      </Text>
     </View>
   );
 }

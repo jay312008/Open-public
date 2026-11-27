@@ -121,20 +121,75 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             content: userPrompt,
           },
         ],
-        1100
+        1600
       );
 
+      const cleanLatex = (s: unknown): unknown => {
+        if (typeof s === 'string') {
+          return s
+            .replace(/\\text\{([^}]+)\}/g, '$1')
+            .replace(/\\Omega/g, 'Ω')
+            .replace(/\\pi/g, 'π')
+            .replace(/\\theta/g, 'θ')
+            .replace(/\\lambda/g, 'λ')
+            .replace(/\\times/g, '×')
+            .replace(/\\cdot/g, '·')
+            .replace(/\\pm/g, '±')
+            .replace(/\\sin/g, 'sin')
+            .replace(/\\cos/g, 'cos')
+            .replace(/\\tan/g, 'tan')
+            .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+            .replace(/\$/g, '');
+        }
+        if (Array.isArray(s)) return s.map(cleanLatex);
+        if (s && typeof s === 'object') {
+          const out: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(s as Record<string, unknown>)) {
+            out[k] = k === 'expression' || k === 'formulaExpr' ? v : cleanLatex(v);
+          }
+          return out;
+        }
+        return s;
+      };
+
+      let parsed: Record<string, unknown> | null = null;
       try {
         const cleaned = reply
           .replace(/^```json\s*/i, '')
           .replace(/```$/i, '')
           .trim()
           .replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
-        const parsed = JSON.parse(cleaned);
-        res.status(200).json(parsed);
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        const jsonSlice = firstBrace >= 0 && lastBrace > firstBrace ? cleaned.slice(firstBrace, lastBrace + 1) : cleaned;
+        parsed = cleanLatex(JSON.parse(jsonSlice)) as Record<string, unknown>;
       } catch {
-        res.status(200).json({ text: reply });
+        parsed = { text: cleanLatex(reply) };
       }
+
+      // If the user explicitly asked to graph/plot an equation, guarantee a dynamic function_plot for THAT exact equation
+      const eqMatch = question.match(/(?:y|f\(x\))\s*=\s*([0-9a-zA-Z+\-*/^().\s²³]+)/i);
+      const asksGraph = /\b(graph|plot|sketch|curve|parabola|sine|cosine|function)\b/i.test(question);
+      if (eqMatch && eqMatch[1] && asksGraph) {
+        const expr = eqMatch[1].trim().replace(/²/g, '^2').replace(/³/g, '^3');
+        const existing = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        const hasPlot = existing.some((w: unknown) => (w as { type?: string })?.type === 'function_plot');
+        if (!hasPlot) {
+          parsed.widgets = [
+            {
+              type: 'function_plot',
+              title: `Interactive Graph: y = ${expr}`,
+              expression: expr,
+              xMin: -6,
+              xMax: 6,
+              caption: `Live plot of y = ${expr}. Edit the equation or trace points below.`,
+            },
+            ...existing,
+          ];
+        }
+      }
+
+      res.status(200).json(parsed);
       return;
     }
 

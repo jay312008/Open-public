@@ -20,6 +20,13 @@ export const HomeCardAssets = {
   bookAnalyzerFg: require('../../assets/images/home/book_analyzer_fg.png') as ImageSourcePropType,
 };
 
+export const SubjectCardAssets = {
+  mathBg: require('../../assets/images/subjects/math_bg.jpg') as ImageSourcePropType,
+  scienceBg: require('../../assets/images/subjects/science_bg.jpg') as ImageSourcePropType,
+  humanitiesBg: require('../../assets/images/subjects/humanities_bg.jpg') as ImageSourcePropType,
+  techBg: require('../../assets/images/subjects/tech_bg.jpg') as ImageSourcePropType,
+};
+
 export type CompanionId = 'molly' | 'leo' | 'pip' | 'zuri';
 
 export interface CompanionConfig {

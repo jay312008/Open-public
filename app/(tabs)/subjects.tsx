@@ -18,11 +18,11 @@ import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
-import { HomeCardAssets } from '@/constants/assets';
+import { SubjectCardAssets } from '@/constants/assets';
 
 const LEVEL_FILTERS = ['All Subjects', 'O-Level', 'A-Level', 'University'] as const;
 
-function getSubjectVisual(subjectId: string): {
+function getSubjectVisual(subjectId: string, subjectName = ''): {
   bg: ImageSourcePropType;
   gradLight: [string, string];
   gradDark: [string, string];
@@ -30,53 +30,67 @@ function getSubjectVisual(subjectId: string): {
   artIcon: keyof typeof Ionicons.glyphMap;
   artAccent: string;
 } {
-  switch (subjectId) {
-    case 'math':
-      return {
-        bg: HomeCardAssets.askMollyBg,
-        gradLight: ['rgba(255,255,255,0.92)', 'rgba(253,234,225,0.72)'],
-        gradDark: ['rgba(30,36,44,0.9)', 'rgba(54,42,68,0.68)'],
-        badgeIcon: 'calculator-outline',
-        artIcon: 'calculator',
-        artAccent: '#7C3AED',
-      };
-    case 'english':
-      return {
-        bg: HomeCardAssets.quizGeneratorBg,
-        gradLight: ['rgba(255,255,255,0.92)', 'rgba(255,237,213,0.74)'],
-        gradDark: ['rgba(30,36,44,0.9)', 'rgba(66,46,32,0.68)'],
-        badgeIcon: 'book-outline',
-        artIcon: 'library',
-        artAccent: '#EA580C',
-      };
-    case 'phys':
-      return {
-        bg: HomeCardAssets.imageAnalyzerBg,
-        gradLight: ['rgba(255,255,255,0.92)', 'rgba(219,234,254,0.74)'],
-        gradDark: ['rgba(30,36,44,0.9)', 'rgba(30,48,74,0.68)'],
-        badgeIcon: 'planet-outline',
-        artIcon: 'planet',
-        artAccent: '#2563EB',
-      };
-    case 'chem':
-      return {
-        bg: HomeCardAssets.bookAnalyzerBg,
-        gradLight: ['rgba(255,255,255,0.92)', 'rgba(243,232,255,0.74)'],
-        gradDark: ['rgba(30,36,44,0.9)', 'rgba(58,36,74,0.68)'],
-        badgeIcon: 'flask-outline',
-        artIcon: 'flask',
-        artAccent: '#9333EA',
-      };
-    default:
-      return {
-        bg: HomeCardAssets.subjectsBg,
-        gradLight: ['rgba(255,255,255,0.92)', 'rgba(220,252,231,0.74)'],
-        gradDark: ['rgba(30,36,44,0.9)', 'rgba(28,58,44,0.68)'],
-        badgeIcon: 'leaf-outline',
-        artIcon: 'leaf',
-        artAccent: '#16A34A',
-      };
+  const key = `${subjectId} ${subjectName}`.toLowerCase();
+
+  if (key.includes('math') || key.includes('calc') || key.includes('stat')) {
+    return {
+      bg: SubjectCardAssets.mathBg,
+      gradLight: ['rgba(255,255,255,0.88)', 'rgba(245,236,255,0.32)'],
+      gradDark: ['rgba(26,30,40,0.88)', 'rgba(48,36,68,0.45)'],
+      badgeIcon: 'calculator-outline',
+      artIcon: 'calculator',
+      artAccent: '#7C3AED',
+    };
   }
+  if (
+    key.includes('computer') ||
+    key.includes('ict') ||
+    key.includes('econ') ||
+    key.includes('account') ||
+    key.includes('commerce') ||
+    key.includes('business') ||
+    key.includes('data')
+  ) {
+    return {
+      bg: SubjectCardAssets.techBg,
+      gradLight: ['rgba(255,255,255,0.88)', 'rgba(219,234,254,0.32)'],
+      gradDark: ['rgba(22,30,44,0.88)', 'rgba(28,46,74,0.45)'],
+      badgeIcon: 'laptop-outline',
+      artIcon: 'analytics',
+      artAccent: '#2563EB',
+    };
+  }
+  if (
+    key.includes('phys') ||
+    key.includes('chem') ||
+    key.includes('bio') ||
+    key.includes('geol') ||
+    key.includes('food') ||
+    key.includes('human') ||
+    key.includes('science') ||
+    key.includes('logic')
+  ) {
+    return {
+      bg: SubjectCardAssets.scienceBg,
+      gradLight: ['rgba(255,255,255,0.88)', 'rgba(220,252,231,0.30)'],
+      gradDark: ['rgba(20,34,30,0.88)', 'rgba(24,56,44,0.45)'],
+      badgeIcon: key.includes('phys')
+        ? 'planet-outline'
+        : key.includes('chem')
+          ? 'flask-outline'
+          : 'leaf-outline',
+      artIcon: key.includes('phys') ? 'planet' : key.includes('chem') ? 'flask' : 'leaf',
+      artAccent: key.includes('phys') ? '#0284C7' : key.includes('chem') ? '#9333EA' : '#16A34A',
+    };
+  }
+  return {
+    bg: SubjectCardAssets.humanitiesBg,
+    gradLight: ['rgba(255,255,255,0.88)', 'rgba(255,237,213,0.30)'],
+    gradDark: ['rgba(36,28,24,0.88)', 'rgba(66,44,30,0.45)'],
+    badgeIcon: key.includes('geog') ? 'earth-outline' : 'book-outline',
+    artIcon: key.includes('geog') ? 'earth' : 'library',
+    artAccent: '#EA580C',
+  };
 }
 
 export default function SubjectsScreen() {
@@ -182,7 +196,7 @@ export default function SubjectsScreen() {
             {/* Vertical Illustrated Subject Cards (one after another) */}
             <View style={styles.verticalList}>
               {filteredSubjects.map((sub) => {
-                const vis = getSubjectVisual(sub.id);
+                const vis = getSubjectVisual(sub.id, sub.name);
                 const totalLessons = sub.topics.reduce((a, t) => a + t.lessons.length, 0);
                 const doneLessons = sub.topics.reduce(
                   (a, t) => a + t.lessons.filter((l) => completedLessonIds.includes(l.id)).length,

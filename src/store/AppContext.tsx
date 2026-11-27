@@ -258,9 +258,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((raw) => {
         if (raw) {
           const parsed = JSON.parse(raw) as Partial<PersistedState>;
+          // Always merge the latest full 44-subject Cameroon GCE & University catalog
+          // while preserving any custom topics the user previously added.
+          const savedCustomTopicsBySubject = new Map<string, SubjectItem['topics']>();
+          for (const oldSub of parsed.subjects ?? []) {
+            const customs = (oldSub.topics ?? []).filter((t) => t.isCustom);
+            if (customs.length > 0) savedCustomTopicsBySubject.set(oldSub.id, customs);
+          }
+          const mergedSubjects = SUBJECT_CATALOG.map((sub) => {
+            const customs = savedCustomTopicsBySubject.get(sub.id);
+            return customs ? { ...sub, topics: [...sub.topics, ...customs] } : sub;
+          });
+
           setState((prev) => ({
             ...prev,
             ...parsed,
+            subjects: mergedSubjects,
             profile: { ...prev.profile, ...(parsed.profile ?? {}) },
           }));
         }
