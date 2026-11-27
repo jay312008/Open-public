@@ -245,3 +245,29 @@ export interface LiveLessonStep {
   boardElement: LiveBoardElement;
   durationMs: number;
 }
+
+export interface AITeacherDoc {
+  id: string;
+  title: string;
+  content: string;
+  addedAt: string;
+}
+
+export interface AITeacherItem {
+  id: string;
+  name: string;
+  subjectName: string;
+  educationLevel: 'O-Level' | 'A-Level' | 'University';
+  teachingStyle: 'Friendly Step-by-Step' | 'Strict Exam Coach' | 'Socratic Questioning';
+  avatarEmoji: string;
+  accentColor: string;
+  instructions: string;
+  documents: AITeacherDoc[];
+  roadmapSteps: { id: string; title: string; done: boolean }[];
+  createdAt: string;
+}
+
+export interface LearningMemorySettings {
+  shareContextWithAI: boolean;
+  weakTopics: string[];
+}

@@ -106,12 +106,16 @@ export default function LiveTeacherScreen() {
 
   const [topic, setTopic] = useState('Quadratic Equations');
   const [boardSurfaceId, setBoardSurfaceId] = useState<BoardSurfaceId>('white');
+  const [writeMode, setWriteMode] = useState<'pen' | 'type'>('pen');
   const [drawTool, setDrawTool] = useState<DrawTool>('pen');
   const [penColorId, setPenColorId] = useState<string>('blue');
   const [strokeWidth, setStrokeWidth] = useState<number>(3);
   const [drawMode, setDrawMode] = useState<boolean>(true);
   const [strokes, setStrokes] = useState<CanvasStroke[]>([]);
+  const [redoStack, setRedoStack] = useState<CanvasStroke[]>([]);
   const [activePath, setActivePath] = useState<string>('');
+  const [typedBoardText, setTypedBoardText] = useState<string>('');
+  const [typedBoardRole, setTypedBoardRole] = useState<SemanticRole>('formula');
 
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [steps, setSteps] = useState<LiveLessonStep[]>([]);
@@ -451,8 +455,43 @@ export default function LiveTeacherScreen() {
             </AnimatedPressable>
           </View>
 
-          {/* Board Surface & Pen Color Bar */}
+          {/* 2 Writing Modes Switcher: Freehand Pen vs Typed Board Blocks */}
           <View style={[styles.toolbarCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {(
+                [
+                  { id: 'pen', label: 'Mode 1: Freehand Pen', icon: 'brush-outline' },
+                  { id: 'type', label: 'Mode 2: Type on Board', icon: 'text-outline' },
+                ] as const
+              ).map((m) => {
+                const active = writeMode === m.id;
+                return (
+                  <AnimatedPressable
+                    key={m.id}
+                    onPress={() => {
+                      setWriteMode(m.id);
+                      setDrawMode(m.id === 'pen');
+                    }}
+                    style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 5,
+                      paddingVertical: 8,
+                      borderRadius: 12,
+                      backgroundColor: active ? colors.coral : colors.surfaceMuted,
+                    }}
+                  >
+                    <Ionicons name={m.icon} size={14} color={active ? '#FFFFFF' : colors.text} />
+                    <Text style={{ fontSize: 11.5, fontWeight: '800', color: active ? '#FFFFFF' : colors.text }}>
+                      {m.label}
+                    </Text>
+                  </AnimatedPressable>
+                );
+              })}
+            </View>
+
             <View style={styles.toolRow}>
               <Text style={[styles.toolSectionLbl, { color: colors.textSecondary }]}>Board:</Text>
               <View style={styles.swatchRow}>
@@ -478,102 +517,192 @@ export default function LiveTeacherScreen() {
                 })}
               </View>
 
-              <AnimatedPressable
-                onPress={() => setDrawMode((v) => !v)}
-                style={[
-                  styles.modeToggle,
-                  {
-                    backgroundColor: drawMode ? colors.coral : colors.surfaceMuted,
-                  },
-                ]}
-              >
-                <Ionicons name={drawMode ? 'pencil' : 'hand-left-outline'} size={14} color={drawMode ? '#FFFFFF' : colors.text} />
-                <Text style={{ fontSize: 11.5, fontWeight: '700', color: drawMode ? '#FFFFFF' : colors.text }}>
-                  {drawMode ? 'Draw On' : 'Scroll'}
-                </Text>
-              </AnimatedPressable>
+              {writeMode === 'pen' && (
+                <AnimatedPressable
+                  onPress={() => setDrawMode((v) => !v)}
+                  style={[
+                    styles.modeToggle,
+                    {
+                      backgroundColor: drawMode ? colors.brandGreen : colors.surfaceMuted,
+                    },
+                  ]}
+                >
+                  <Ionicons name={drawMode ? 'pencil' : 'hand-left-outline'} size={13} color={drawMode ? '#FFFFFF' : colors.text} />
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: drawMode ? '#FFFFFF' : colors.text }}>
+                    {drawMode ? 'Draw' : 'Scroll'}
+                  </Text>
+                </AnimatedPressable>
+              )}
             </View>
 
-            {/* Pen Tools + Ink Colors + Undo/Clear */}
-            <View style={styles.toolRow}>
-              {(['pen', 'highlighter', 'eraser'] as DrawTool[]).map((t) => {
-                const active = drawTool === t;
-                const icon = t === 'pen' ? 'brush-outline' : t === 'highlighter' ? 'color-wand-outline' : 'backspace-outline';
-                return (
-                  <AnimatedPressable
-                    key={t}
-                    onPress={() => {
-                      setDrawTool(t);
-                      setDrawMode(true);
-                    }}
-                    style={[
-                      styles.toolIconBtn,
-                      {
-                        backgroundColor: active ? colors.surfaceCoralSoft : colors.surfaceMuted,
-                        borderColor: active ? colors.coral : 'transparent',
-                      },
-                    ]}
-                    accessibilityLabel={t}
-                  >
-                    <Ionicons name={icon} size={16} color={active ? colors.coral : colors.text} />
-                  </AnimatedPressable>
-                );
-              })}
-
-              <View style={styles.swatchRow}>
-                {PEN_COLORS.map((c) => {
-                  const swatchColor = surface.isDarkSurface ? c.dark : c.light;
-                  const active = penColorId === c.id && drawTool !== 'eraser';
+            {writeMode === 'pen' ? (
+              <View style={styles.toolRow}>
+                {(['pen', 'highlighter', 'eraser'] as DrawTool[]).map((t) => {
+                  const active = drawTool === t;
+                  const icon = t === 'pen' ? 'brush-outline' : t === 'highlighter' ? 'color-wand-outline' : 'backspace-outline';
                   return (
                     <AnimatedPressable
-                      key={c.id}
+                      key={t}
                       onPress={() => {
-                        setPenColorId(c.id);
-                        if (drawTool === 'eraser') setDrawTool('pen');
+                        setDrawTool(t);
                         setDrawMode(true);
                       }}
                       style={[
-                        styles.penSwatch,
+                        styles.toolIconBtn,
                         {
-                          backgroundColor: swatchColor,
+                          backgroundColor: active ? colors.surfaceCoralSoft : colors.surfaceMuted,
                           borderColor: active ? colors.coral : 'transparent',
-                          borderWidth: active ? 2.5 : 0,
                         },
                       ]}
-                      accessibilityLabel={`${c.label} pen`}
+                      accessibilityLabel={t}
                     >
-                      <View />
+                      <Ionicons name={icon} size={16} color={active ? colors.coral : colors.text} />
                     </AnimatedPressable>
                   );
                 })}
+
+                <View style={styles.swatchRow}>
+                  {PEN_COLORS.map((c) => {
+                    const swatchColor = surface.isDarkSurface ? c.dark : c.light;
+                    const active = penColorId === c.id && drawTool !== 'eraser';
+                    return (
+                      <AnimatedPressable
+                        key={c.id}
+                        onPress={() => {
+                          setPenColorId(c.id);
+                          if (drawTool === 'eraser') setDrawTool('pen');
+                          setDrawMode(true);
+                        }}
+                        style={[
+                          styles.penSwatch,
+                          {
+                            backgroundColor: swatchColor,
+                            borderColor: active ? colors.coral : 'transparent',
+                            borderWidth: active ? 2.5 : 0,
+                          },
+                        ]}
+                        accessibilityLabel={`${c.label} pen`}
+                      >
+                        <View />
+                      </AnimatedPressable>
+                    );
+                  })}
+                </View>
+
+                <AnimatedPressable
+                  onPress={() => setStrokeWidth((w) => (w === 3 ? 6 : w === 6 ? 1.8 : 3))}
+                  style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
+                  accessibilityLabel="Stroke thickness"
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: colors.text }}>
+                    {strokeWidth < 2.5 ? 'S' : strokeWidth < 5 ? 'M' : 'L'}
+                  </Text>
+                </AnimatedPressable>
+
+                <AnimatedPressable
+                  onPress={() => {
+                    setStrokes((prev) => {
+                      if (prev.length === 0) return prev;
+                      const last = prev[prev.length - 1];
+                      setRedoStack((r) => [...r, last]);
+                      return prev.slice(0, -1);
+                    });
+                  }}
+                  style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
+                  accessibilityLabel="Undo stroke"
+                >
+                  <Ionicons name="arrow-undo" size={15} color={colors.text} />
+                </AnimatedPressable>
+
+                <AnimatedPressable
+                  onPress={() => {
+                    setRedoStack((r) => {
+                      if (r.length === 0) return r;
+                      const restored = r[r.length - 1];
+                      setStrokes((prev) => [...prev, restored]);
+                      return r.slice(0, -1);
+                    });
+                  }}
+                  style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
+                  accessibilityLabel="Redo stroke"
+                >
+                  <Ionicons name="arrow-redo" size={15} color={colors.text} />
+                </AnimatedPressable>
+
+                <AnimatedPressable
+                  onPress={() => {
+                    setStrokes([]);
+                    setRedoStack([]);
+                  }}
+                  style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
+                  accessibilityLabel="Clear drawings"
+                >
+                  <Ionicons name="trash-outline" size={15} color={colors.text} />
+                </AnimatedPressable>
               </View>
-
-              <AnimatedPressable
-                onPress={() => setStrokeWidth((w) => (w === 3 ? 6 : w === 6 ? 1.8 : 3))}
-                style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
-                accessibilityLabel="Stroke thickness"
-              >
-                <Text style={{ fontSize: 11, fontWeight: '800', color: colors.text }}>
-                  {strokeWidth < 2.5 ? 'S' : strokeWidth < 5 ? 'M' : 'L'}
-                </Text>
-              </AnimatedPressable>
-
-              <AnimatedPressable
-                onPress={() => setStrokes((prev) => prev.slice(0, -1))}
-                style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
-                accessibilityLabel="Undo stroke"
-              >
-                <Ionicons name="arrow-undo" size={15} color={colors.text} />
-              </AnimatedPressable>
-
-              <AnimatedPressable
-                onPress={() => setStrokes([])}
-                style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
-                accessibilityLabel="Clear drawings"
-              >
-                <Ionicons name="trash-outline" size={15} color={colors.text} />
-              </AnimatedPressable>
-            </View>
+            ) : (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                  {(['formula', 'question', 'example', 'tip', 'solution'] as SemanticRole[]).map((r) => {
+                    const active = typedBoardRole === r;
+                    return (
+                      <AnimatedPressable
+                        key={r}
+                        onPress={() => setTypedBoardRole(r)}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 999,
+                          backgroundColor: active ? colors.purple : colors.surfaceMuted,
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: active ? '#FFFFFF' : colors.text, textTransform: 'capitalize' }}>
+                          {r}
+                        </Text>
+                      </AnimatedPressable>
+                    );
+                  })}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <TextInput
+                    value={typedBoardText}
+                    onChangeText={setTypedBoardText}
+                    placeholder="Type an equation or note directly onto the board (e.g. 2x + 3 = 7)..."
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      flex: 1,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      borderRadius: 12,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      fontSize: 13.5,
+                      color: colors.text,
+                    }}
+                  />
+                  <AnimatedPressable
+                    onPress={() => {
+                      const clean = typedBoardText.trim();
+                      if (!clean) return;
+                      setBoardCards((prev) => [
+                        ...prev,
+                        {
+                          id: `typed-${Date.now()}`,
+                          role: typedBoardRole,
+                          label: `Your ${typedBoardRole}`,
+                          content: clean,
+                          explanation: `You wrote on the board: ${clean}`,
+                        },
+                      ]);
+                      setTypedBoardText('');
+                    }}
+                    style={[styles.startPill, { backgroundColor: colors.purple }]}
+                  >
+                    <Text style={styles.startPillText}>Add</Text>
+                  </AnimatedPressable>
+                </View>
+              </View>
+            )}
           </View>
 
           {/* REAL INTERACTIVE DRAWING CANVAS (Student + Molly Vector Strokes) */}

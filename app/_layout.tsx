@@ -14,6 +14,9 @@ function RootNavigator() {
       <Stack screenOptions={{ headerShown: false, animation: 'fade_from_bottom' }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="auth" />
+        <Stack.Screen name="teachers/index" />
+        <Stack.Screen name="teachers/create" />
+        <Stack.Screen name="teachers/[id]" />
         <Stack.Screen name="lesson/[id]" />
         <Stack.Screen name="leaderboard" />
         <Stack.Screen name="notifications" />

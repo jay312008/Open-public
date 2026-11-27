@@ -78,12 +78,12 @@ export default function HomeScreen() {
       route: '/tools/quiz-generator' as const,
     },
     {
-      id: 'chat',
-      label: 'Ask Molly',
-      icon: 'chatbubble-ellipses' as const,
+      id: 'teachers',
+      label: 'My Teachers',
+      icon: 'school' as const,
       color: '#22A861',
       tint: isDark ? 'rgba(34,168,97,0.22)' : '#E5F8EE',
-      route: '/tools/ask-molly' as const,
+      route: '/teachers' as const,
     },
   ];
 
@@ -198,7 +198,7 @@ export default function HomeScreen() {
             {quickShortcuts.map((item) => (
               <AnimatedPressable
                 key={item.id}
-                onPress={() => router.push(item.route)}
+                onPress={() => router.push(item.route as never)}
                 scaleTo={0.94}
                 style={styles.shortcutItem}
                 accessibilityLabel={item.label}
