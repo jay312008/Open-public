@@ -46,18 +46,26 @@ export default function CommunityScreen() {
   const [commentDraft, setCommentDraft] = useState('');
 
   const pickImage = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-    });
-    if (!res.canceled && res.assets[0]) {
-      setComposerImage(res.assets[0].uri);
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.7,
+      });
+      if (!res.canceled && res.assets[0]) {
+        setComposerImage(res.assets[0].uri);
+      }
+    } catch {
+      Alert.alert('Photo Picker', 'Could not open the image picker on this browser.');
     }
   };
 
   const handlePublish = () => {
-    if (!composerText.trim()) return;
-    createPost(composerText, 'Study Note', composerImage);
+    if (!composerText.trim() && !composerImage) return;
+    createPost(
+      composerText.trim() || 'Shared a study image 📸',
+      'Study Note',
+      composerImage
+    );
     setComposerText('');
     setComposerImage(undefined);
     setComposerModalOpen(false);

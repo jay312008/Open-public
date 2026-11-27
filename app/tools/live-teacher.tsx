@@ -1,65 +1,200 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  PanResponder,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Speech from 'expo-speech';
+import Svg, { Path } from 'react-native-svg';
 import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { CompanionAvatar } from '@/components/CompanionAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
-import { generateLiveLessonSteps, isLiveAIGatewayConfigured } from '@/lib/aiGateway';
+import { askMollyAI, generateLiveLessonSteps, isLiveAIGatewayConfigured } from '@/lib/aiGateway';
 import { LiveBoardElement, LiveLessonStep } from '@/types/models';
+
+type BoardSurfaceId = 'white' | 'dark' | 'blue' | 'cream' | 'mint';
+type DrawTool = 'pen' | 'highlighter' | 'eraser';
+type SemanticRole = 'question' | 'explanation' | 'formula' | 'example' | 'tip' | 'solution';
+
+interface CanvasStroke {
+  id: string;
+  d: string;
+  color: string;
+  width: number;
+  opacity: number;
+  author: 'student' | 'molly';
+}
+
+interface SemanticBoardCard {
+  id: string;
+  role: SemanticRole;
+  label: string;
+  content: string;
+  explanation: string;
+}
+
+const BOARD_SURFACES: {
+  id: BoardSurfaceId;
+  label: string;
+  swatch: string;
+  bg: string;
+  border: string;
+  grid: string;
+  isDarkSurface: boolean;
+}[] = [
+  { id: 'white', label: 'White', swatch: '#FFFFFF', bg: '#FFFFFF', border: '#E2E8F0', grid: '#F1F5F9', isDarkSurface: false },
+  { id: 'dark', label: 'Dark', swatch: '#16241E', bg: '#16241E', border: '#2E473B', grid: '#1F332B', isDarkSurface: true },
+  { id: 'blue', label: 'Blue', swatch: '#132743', bg: '#132743', border: '#264975', grid: '#1B365C', isDarkSurface: true },
+  { id: 'cream', label: 'Cream', swatch: '#FFF8EA', bg: '#FFF8EA', border: '#E8D7B9', grid: '#F5EAD4', isDarkSurface: false },
+  { id: 'mint', label: 'Mint', swatch: '#EEFBF3', bg: '#EEFBF3', border: '#C7EBD5', grid: '#DCF5E6', isDarkSurface: false },
+];
+
+const PEN_COLORS = [
+  { id: 'auto', label: 'Ink', light: '#1E2430', dark: '#F8FAFC' },
+  { id: 'coral', label: 'Coral', light: '#EF4444', dark: '#FF7B6B' },
+  { id: 'blue', label: 'Blue', light: '#2563EB', dark: '#60A5FA' },
+  { id: 'green', label: 'Mint', light: '#16A34A', dark: '#4ADE80' },
+  { id: 'purple', label: 'Purple', light: '#7C3AED', dark: '#C084FC' },
+  { id: 'gold', label: 'Amber', light: '#D97706', dark: '#FBBF24' },
+];
+
+function mapElementTypeToRole(el: LiveBoardElement): SemanticRole {
+  const lbl = el.label.toLowerCase();
+  if (lbl.includes('question') || lbl.includes('check')) return 'question';
+  if (el.type === 'equation' || lbl.includes('formula') || lbl.includes('form')) return 'formula';
+  if (lbl.includes('example') || el.type === 'step') return 'example';
+  if (lbl.includes('tip') || el.type === 'note') return 'tip';
+  if (lbl.includes('root') || lbl.includes('answer') || lbl.includes('solution')) return 'solution';
+  return 'explanation';
+}
+
+function getSemanticStyle(role: SemanticRole, isDarkSurface: boolean) {
+  const map: Record<
+    SemanticRole,
+    { tag: string; colorLight: string; colorDark: string; bgLight: string; bgDark: string; icon: keyof typeof Ionicons.glyphMap }
+  > = {
+    question: { tag: 'QUESTION', colorLight: '#2563EB', colorDark: '#60A5FA', bgLight: '#EFF6FF', bgDark: 'rgba(59,130,246,0.16)', icon: 'help-circle' },
+    explanation: { tag: 'EXPLANATION', colorLight: '#1E293B', colorDark: '#E2E8F0', bgLight: '#F8FAFC', bgDark: 'rgba(255,255,255,0.08)', icon: 'book-outline' },
+    formula: { tag: 'FORMULA', colorLight: '#7C3AED', colorDark: '#C4B5FD', bgLight: '#F5F3FF', bgDark: 'rgba(139,92,246,0.2)', icon: 'calculator-outline' },
+    example: { tag: 'EXAMPLE', colorLight: '#B45309', colorDark: '#FCD34D', bgLight: '#FFFBEB', bgDark: 'rgba(245,158,11,0.18)', icon: 'bulb-outline' },
+    tip: { tag: 'PRO TIP', colorLight: '#15803D', colorDark: '#86EFAC', bgLight: '#F0FDF4', bgDark: 'rgba(34,197,94,0.18)', icon: 'sparkles-outline' },
+    solution: { tag: 'SOLUTION', colorLight: '#E11D48', colorDark: '#FDA4AF', bgLight: '#FFF1F2', bgDark: 'rgba(244,63,94,0.2)', icon: 'checkmark-circle-outline' },
+  };
+  const cfg = map[role];
+  return {
+    tag: cfg.tag,
+    icon: cfg.icon,
+    accent: isDarkSurface ? cfg.colorDark : cfg.colorLight,
+    cardBg: isDarkSurface ? cfg.bgDark : cfg.bgLight,
+    textColor: isDarkSurface ? '#F8FAFC' : '#1E2430',
+  };
+}
 
 export default function LiveTeacherScreen() {
   const { colors } = useTheme();
   const { profile, saveConversation } = useApp();
 
   const [topic, setTopic] = useState('Quadratic Equations');
-  const [boardSurface, setBoardSurface] = useState<'chalkboard' | 'whiteboard' | 'cream'>('chalkboard');
+  const [boardSurfaceId, setBoardSurfaceId] = useState<BoardSurfaceId>('white');
+  const [drawTool, setDrawTool] = useState<DrawTool>('pen');
+  const [penColorId, setPenColorId] = useState<string>('blue');
+  const [strokeWidth, setStrokeWidth] = useState<number>(3);
+  const [drawMode, setDrawMode] = useState<boolean>(true);
+  const [strokes, setStrokes] = useState<CanvasStroke[]>([]);
+  const [activePath, setActivePath] = useState<string>('');
+
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [steps, setSteps] = useState<LiveLessonStep[]>([]);
+  const [boardCards, setBoardCards] = useState<SemanticBoardCard[]>([]);
   const [currentStepIdx, setCurrentStepIdx] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [selectedElement, setSelectedElement] = useState<LiveBoardElement | null>(null);
+  const [selectedCard, setSelectedCard] = useState<SemanticBoardCard | null>(null);
   const [transcript, setTranscript] = useState<string[]>([]);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const surfaceTheme =
-    boardSurface === 'whiteboard'
-      ? {
-          bg: '#FFFFFF',
-          border: '#E2E8F0',
-          header: '#16A34A',
-          hint: '#64748B',
-          itemBg: '#F8FAFC',
-          itemBorder: '#E2E8F0',
-          itemText: '#0F172A',
-          emptyText: '#475569',
-        }
-      : boardSurface === 'cream'
-      ? {
-          bg: '#FFF9EC',
-          border: '#EADBC0',
-          header: '#C25E28',
-          hint: '#8A7960',
-          itemBg: '#FFFDF8',
-          itemBorder: '#E7D8BE',
-          itemText: '#2A2218',
-          emptyText: '#6F614D',
-        }
-      : {
-          bg: '#16241E',
-          border: '#2E473B',
-          header: '#86E88A',
-          hint: '#98B4A3',
-          itemBg: '#1D3028',
-          itemBorder: '#2D483C',
-          itemText: '#FFFFFF',
-          emptyText: '#B7CFC0',
-        };
+  // Live conversation bar
+  const [liveInput, setLiveInput] = useState('');
+  const [answeringLive, setAnsweringLive] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentPathRef = useRef<string>('');
+
+  const surface = useMemo(
+    () => BOARD_SURFACES.find((s) => s.id === boardSurfaceId) ?? BOARD_SURFACES[0],
+    [boardSurfaceId]
+  );
+
+  const resolvedPenColor = useMemo(() => {
+    const found = PEN_COLORS.find((c) => c.id === penColorId) ?? PEN_COLORS[0];
+    return surface.isDarkSurface ? found.dark : found.light;
+  }, [penColorId, surface.isDarkSurface]);
+
+  // Keep latest drawing config in refs for PanResponder
+  const drawCfgRef = useRef({
+    drawMode,
+    drawTool,
+    resolvedPenColor,
+    strokeWidth,
+    surfaceBg: surface.bg,
+  });
+  drawCfgRef.current = {
+    drawMode,
+    drawTool,
+    resolvedPenColor,
+    strokeWidth,
+    surfaceBg: surface.bg,
+  };
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => drawCfgRef.current.drawMode,
+        onMoveShouldSetPanResponder: () => drawCfgRef.current.drawMode,
+        onPanResponderGrant: (evt) => {
+          if (!drawCfgRef.current.drawMode) return;
+          const { locationX, locationY } = evt.nativeEvent;
+          const start = `M ${locationX.toFixed(1)} ${locationY.toFixed(1)}`;
+          currentPathRef.current = start;
+          setActivePath(start);
+        },
+        onPanResponderMove: (evt) => {
+          if (!drawCfgRef.current.drawMode) return;
+          const { locationX, locationY } = evt.nativeEvent;
+          const next = `${currentPathRef.current} L ${locationX.toFixed(1)} ${locationY.toFixed(1)}`;
+          currentPathRef.current = next;
+          setActivePath(next);
+        },
+        onPanResponderRelease: () => {
+          if (!drawCfgRef.current.drawMode || !currentPathRef.current) return;
+          const cfg = drawCfgRef.current;
+          const isEraser = cfg.drawTool === 'eraser';
+          const isHighlighter = cfg.drawTool === 'highlighter';
+          const finished: CanvasStroke = {
+            id: `stroke-${Date.now()}-${Math.random()}`,
+            d: currentPathRef.current,
+            color: isEraser ? cfg.surfaceBg : cfg.resolvedPenColor,
+            width: isEraser ? 20 : isHighlighter ? 14 : cfg.strokeWidth,
+            opacity: isHighlighter ? 0.34 : 1,
+            author: 'student',
+          };
+          setStrokes((prev) => [...prev, finished]);
+          currentPathRef.current = '';
+          setActivePath('');
+        },
+      }),
+    []
+  );
 
   useEffect(() => {
     return () => {
@@ -68,7 +203,29 @@ export default function LiveTeacherScreen() {
     };
   }, []);
 
-  const speakStep = (stepList: LiveLessonStep[], idx: number) => {
+  // Let Molly draw a synchronized illustrative vector diagram on the canvas for step 2/3
+  const addMollySketchForStep = (stepIdx: number, topicName: string) => {
+    if (stepIdx !== 1) return;
+    const accent = surface.isDarkSurface ? '#C084FC' : '#7C3AED';
+    const axis = surface.isDarkSurface ? '#64748B' : '#94A3B8';
+    const isMath =
+      topicName.toLowerCase().includes('quadratic') ||
+      topicName.toLowerCase().includes('parabola') ||
+      topicName.toLowerCase().includes('math') ||
+      topicName.toLowerCase().includes('graph');
+
+    const sketchStrokes: CanvasStroke[] = isMath
+      ? [
+          { id: `molly-ax-${Date.now()}`, d: 'M 215 115 L 330 115 M 272 24 L 272 135', color: axis, width: 1.8, opacity: 0.85, author: 'molly' },
+          { id: `molly-curve-${Date.now()}`, d: 'M 225 32 Q 272 155 319 32', color: accent, width: 3.2, opacity: 0.95, author: 'molly' },
+        ]
+      : [
+          { id: `molly-hl-${Date.now()}`, d: 'M 225 85 C 255 55, 295 55, 325 85', color: accent, width: 3, opacity: 0.9, author: 'molly' },
+        ];
+    setStrokes((prev) => [...prev.filter((s) => s.author !== 'molly'), ...sketchStrokes]);
+  };
+
+  const speakStep = (stepList: LiveLessonStep[], idx: number, topicName: string) => {
     if (idx >= stepList.length) {
       setIsPlaying(false);
       setIsPaused(false);
@@ -77,17 +234,30 @@ export default function LiveTeacherScreen() {
     const step = stepList[idx];
     setCurrentStepIdx(idx);
     setTranscript((prev) => [...prev, step.speechText]);
+    const card: SemanticBoardCard = {
+      id: step.boardElement.id,
+      role: mapElementTypeToRole(step.boardElement),
+      label: step.boardElement.label,
+      content: step.boardElement.content,
+      explanation: step.boardElement.explanation,
+    };
+    setBoardCards((prev) => {
+      if (prev.some((c) => c.id === card.id)) return prev;
+      return [...prev, card];
+    });
+    addMollySketchForStep(idx, topicName);
+
     Speech.stop();
     Speech.speak(step.speechText, {
       rate: 0.98,
       onDone: () => {
         timerRef.current = setTimeout(() => {
-          speakStep(stepList, idx + 1);
-        }, 650);
+          speakStep(stepList, idx + 1, topicName);
+        }, 700);
       },
       onError: () => {
         timerRef.current = setTimeout(() => {
-          speakStep(stepList, idx + 1);
+          speakStep(stepList, idx + 1, topicName);
         }, step.durationMs);
       },
     });
@@ -96,15 +266,18 @@ export default function LiveTeacherScreen() {
   const handleStartLesson = async () => {
     Speech.stop();
     if (timerRef.current) clearTimeout(timerRef.current);
-    setSelectedElement(null);
+    setSelectedCard(null);
     setTranscript([]);
+    setBoardCards([]);
+    setStrokes((prev) => prev.filter((s) => s.author === 'student'));
     setLoadingPlan(true);
+    const activeTopic = topic.trim() || 'Quadratic Equations';
     try {
-      const res = await generateLiveLessonSteps(topic.trim() || 'Quadratic Equations');
+      const res = await generateLiveLessonSteps(activeTopic);
       setSteps(res.data);
       setIsPlaying(true);
       setIsPaused(false);
-      speakStep(res.data, 0);
+      speakStep(res.data, 0, activeTopic);
     } finally {
       setLoadingPlan(false);
     }
@@ -122,50 +295,123 @@ export default function LiveTeacherScreen() {
     setIsPlaying(true);
     setIsPaused(false);
     const nextIdx = Math.min(Math.max(0, currentStepIdx + 1), steps.length - 1);
-    speakStep(steps, nextIdx);
+    speakStep(steps, nextIdx, topic.trim() || 'Quadratic Equations');
   };
 
-  const handleTapBoardElement = (el: LiveBoardElement) => {
-    // Pause active narration when student interrupts by tapping a board element
+  const handleTapBoardCard = (card: SemanticBoardCard) => {
     handlePauseOrInterrupt();
-    setSelectedElement(el);
-    Speech.speak(el.explanation, { rate: 0.98 });
+    setSelectedCard(card);
+    Speech.stop();
+    Speech.speak(card.explanation, { rate: 0.98 });
+  };
+
+  // Live interruptible question to Molly while on the board
+  const handleAskLiveQuestion = async (promptOverride?: string) => {
+    const q = (promptOverride ?? liveInput).trim();
+    if (!q || answeringLive) return;
+    handlePauseOrInterrupt();
+    setLiveInput('');
+    setAnsweringLive(true);
+
+    const qCard: SemanticBoardCard = {
+      id: `q-${Date.now()}`,
+      role: 'question',
+      label: 'You Asked',
+      content: q,
+      explanation: `Student question: ${q}`,
+    };
+    setBoardCards((prev) => [...prev, qCard]);
+
+    try {
+      const res = await askMollyAI(q, topic);
+      const ansCard: SemanticBoardCard = {
+        id: `ans-${Date.now()}`,
+        role: res.data.equation ? 'formula' : 'solution',
+        label: res.data.equation ? 'Molly · Formula & Answer' : 'Molly · Live Answer',
+        content: res.data.equation ? `${res.data.text}\n\n${res.data.equation}` : res.data.text,
+        explanation: res.data.text,
+      };
+      setBoardCards((prev) => [...prev, ansCard]);
+      setTranscript((prev) => [...prev, `You: ${q}`, `Molly: ${res.data.text}`]);
+      Speech.stop();
+      Speech.speak(res.data.text, { rate: 0.98 });
+    } finally {
+      setAnsweringLive(false);
+    }
+  };
+
+  const handleVoiceMic = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const SR =
+        (window as unknown as { SpeechRecognition?: new () => unknown; webkitSpeechRecognition?: new () => unknown })
+          .SpeechRecognition ||
+        (window as unknown as { webkitSpeechRecognition?: new () => unknown }).webkitSpeechRecognition;
+      if (!SR) {
+        Alert.alert(
+          'Voice Input Unavailable',
+          'Your browser does not support Web Speech Recognition. Type your question below to interrupt Molly live.'
+        );
+        return;
+      }
+      handlePauseOrInterrupt();
+      const rec = new SR() as {
+        lang: string;
+        interimResults: boolean;
+        onstart: () => void;
+        onend: () => void;
+        onerror: () => void;
+        onresult: (ev: { results: { [i: number]: { [j: number]: { transcript: string } } } }) => void;
+        start: () => void;
+      };
+      rec.lang = 'en-US';
+      rec.interimResults = false;
+      rec.onstart = () => setIsListening(true);
+      rec.onend = () => setIsListening(false);
+      rec.onerror = () => setIsListening(false);
+      rec.onresult = (ev) => {
+        const spoken = ev.results?.[0]?.[0]?.transcript;
+        if (spoken) {
+          handleAskLiveQuestion(spoken);
+        }
+      };
+      rec.start();
+      return;
+    }
+    Alert.alert(
+      'Voice Input',
+      'Type your question below to interrupt Molly live, or connect Google Gemini Live / OpenAI Realtime for native duplex voice.'
+    );
   };
 
   const handleSaveSession = () => {
-    if (steps.length === 0) return;
+    if (boardCards.length === 0) return;
     saveConversation({
       id: `live-${Date.now()}`,
-      title: `Live Teacher: ${topic}`,
+      title: `Live Board: ${topic}`,
       tool: 'live-teacher',
       subject: topic,
       updatedAt: new Date().toLocaleDateString(),
       messages: transcript.map((t, i) => ({
         id: `m-${i}`,
-        role: 'assistant',
+        role: t.startsWith('You:') ? 'user' : 'assistant',
         text: t,
         createdAt: `Step ${i + 1}`,
       })),
     });
-    Alert.alert('Session Saved', 'You can review this teaching session in Saved Resources.');
+    Alert.alert('Saved', 'Board lesson saved to Saved Resources.');
   };
-
-  const visibleSteps = currentStepIdx >= 0 ? steps.slice(0, currentStepIdx + 1) : [];
 
   return (
     <AppBackground>
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <BrandHeader showBack title="Molly Live Teacher" />
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <BrandHeader showBack title="Molly Live Board" />
+
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {/* Honest Provider Mode Indicator */}
+          {/* Honest AI Engine Status */}
           <View
             style={[
               styles.modePill,
-              {
-                backgroundColor: isLiveAIGatewayConfigured
-                  ? colors.surfaceMint
-                  : colors.surfaceBlueSoft,
-              },
+              { backgroundColor: isLiveAIGatewayConfigured ? colors.surfaceMint : colors.surfaceBlueSoft },
             ]}
           >
             <Ionicons
@@ -180,189 +426,324 @@ export default function LiveTeacherScreen() {
               ]}
             >
               {isLiveAIGatewayConfigured
-                ? 'Live AI Teaching Gateway Connected · Device Speech'
-                : 'Interactive Prototype · Device Speech Engine (Replaceable AI Provider)'}
+                ? 'Live NVIDIA AI Board · Tap Mic or Type to Interrupt Live'
+                : 'Interactive Canvas & Speech Prototype (Connect Vercel / Gemini Live for real-time audio)'}
             </Text>
           </View>
 
-          {/* Teacher Stage */}
-          <View
-            style={[
-              styles.stageCard,
-              { backgroundColor: colors.surfaceMint, borderColor: colors.border },
-            ]}
-          >
-            <CompanionAvatar companionId={profile.companionId} size={86} />
-            <View style={{ flex: 1, gap: 6 }}>
-              <Text style={[styles.stageTitle, { color: colors.text }]}>
-                Interactive Voice & Board
-              </Text>
-              <TextInput
-                value={topic}
-                onChangeText={setTopic}
-                placeholder="Enter a topic (e.g., Chemical Bonding)"
-                placeholderTextColor={colors.textMuted}
-                style={[
-                  styles.topicInput,
-                  { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
-                ]}
-              />
-            </View>
-          </View>
-
-          {/* Board Surface Selector (Spec Section 5) */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {(
-              [
-                { id: 'chalkboard', label: 'Chalkboard' },
-                { id: 'whiteboard', label: 'Whiteboard' },
-                { id: 'cream', label: 'Cream Paper' },
-              ] as const
-            ).map((opt) => {
-              const active = boardSurface === opt.id;
-              return (
-                <AnimatedPressable
-                  key={opt.id}
-                  onPress={() => setBoardSurface(opt.id)}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 8,
-                    borderRadius: 999,
-                    borderWidth: 1,
-                    alignItems: 'center',
-                    backgroundColor: active ? colors.coral : colors.surface,
-                    borderColor: active ? colors.coral : colors.border,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: '700',
-                      color: active ? '#FFFFFF' : colors.text,
-                    }}
-                  >
-                    {opt.label}
-                  </Text>
-                </AnimatedPressable>
-              );
-            })}
-          </View>
-
-          {/* Controls */}
-          <View style={styles.controlsRow}>
+          {/* Compact Topic + Companion Row */}
+          <View style={[styles.topicRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <CompanionAvatar companionId={profile.companionId} size={46} />
+            <TextInput
+              value={topic}
+              onChangeText={setTopic}
+              placeholder="Lesson topic (e.g. Quadratic Equations)"
+              placeholderTextColor={colors.textMuted}
+              style={[styles.topicInput, { color: colors.text }]}
+            />
             <AnimatedPressable
               onPress={handleStartLesson}
               disabled={loadingPlan}
-              style={[styles.primaryBtn, { backgroundColor: colors.coral, flex: 1 }]}
+              style={[styles.startPill, { backgroundColor: colors.coral }]}
             >
-              <Ionicons name="play" size={18} color="#FFFFFF" />
-              <Text style={styles.primaryBtnText}>
-                {loadingPlan
-                  ? 'Preparing Lesson...'
-                  : steps.length > 0
-                  ? 'Restart Lesson'
-                  : 'Start Live Lesson'}
-              </Text>
+              <Ionicons name="play" size={14} color="#FFFFFF" />
+              <Text style={styles.startPillText}>{loadingPlan ? '...' : 'Teach'}</Text>
             </AnimatedPressable>
-
-            {isPlaying ? (
-              <AnimatedPressable
-                onPress={handlePauseOrInterrupt}
-                style={[styles.secondaryBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <Ionicons name="pause" size={18} color={colors.coral} />
-                <Text style={[styles.secondaryText, { color: colors.text }]}>Interrupt</Text>
-              </AnimatedPressable>
-            ) : isPaused ? (
-              <AnimatedPressable
-                onPress={handleResume}
-                style={[styles.secondaryBtn, { backgroundColor: colors.surfaceMint, borderColor: colors.mint }]}
-              >
-                <Ionicons name="play-forward" size={17} color={colors.mintDark} />
-                <Text style={[styles.secondaryText, { color: colors.mintDark }]}>Resume</Text>
-              </AnimatedPressable>
-            ) : null}
-
-            {steps.length > 0 && (
-              <AnimatedPressable
-                onPress={handleSaveSession}
-                style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                accessibilityLabel="Save teaching session"
-              >
-                <Ionicons name="bookmark-outline" size={20} color={colors.text} />
-              </AnimatedPressable>
-            )}
           </View>
 
-          {/* Interactive Teaching Board */}
-          <View
-            style={[
-              styles.board,
-              { backgroundColor: surfaceTheme.bg, borderColor: surfaceTheme.border },
-            ]}
-          >
-            <View style={styles.boardHeader}>
-              <Text style={[styles.boardLabel, { color: surfaceTheme.header }]}>
-                INTERACTIVE TEACHING BOARD
-              </Text>
-              <Text style={[styles.boardHint, { color: surfaceTheme.hint }]}>
-                Tap any element to re-explain
-              </Text>
-            </View>
-
-            {visibleSteps.length === 0 ? (
-              <View style={styles.boardEmpty}>
-                <Ionicons name="easel-outline" size={34} color={surfaceTheme.header} />
-                <Text style={[styles.boardEmptyText, { color: surfaceTheme.emptyText }]}>
-                  Tap “Start Live Lesson” to watch Molly write equations and explain step by step.
-                </Text>
-              </View>
-            ) : (
-              <View style={{ gap: 10 }}>
-                {visibleSteps.map((s) => {
-                  const active = selectedElement?.id === s.boardElement.id;
+          {/* Board Surface & Pen Color Bar */}
+          <View style={[styles.toolbarCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.toolRow}>
+              <Text style={[styles.toolSectionLbl, { color: colors.textSecondary }]}>Board:</Text>
+              <View style={styles.swatchRow}>
+                {BOARD_SURFACES.map((s) => {
+                  const active = s.id === boardSurfaceId;
                   return (
                     <AnimatedPressable
                       key={s.id}
-                      onPress={() => handleTapBoardElement(s.boardElement)}
+                      onPress={() => setBoardSurfaceId(s.id)}
                       style={[
-                        styles.boardItem,
+                        styles.boardSwatch,
                         {
-                          backgroundColor: surfaceTheme.itemBg,
-                          borderColor: active ? '#FF7557' : surfaceTheme.itemBorder,
+                          backgroundColor: s.swatch,
+                          borderColor: active ? colors.coral : colors.border,
+                          borderWidth: active ? 2.5 : 1,
                         },
                       ]}
+                      accessibilityLabel={`${s.label} board`}
                     >
-                      <Text style={[styles.boardItemLabel, { color: surfaceTheme.header }]}>
-                        {s.boardElement.label}
-                      </Text>
-                      <Text style={[styles.boardItemContent, { color: surfaceTheme.itemText }]}>
-                        {s.boardElement.content}
-                      </Text>
+                      <View />
                     </AnimatedPressable>
                   );
                 })}
               </View>
-            )}
+
+              <AnimatedPressable
+                onPress={() => setDrawMode((v) => !v)}
+                style={[
+                  styles.modeToggle,
+                  {
+                    backgroundColor: drawMode ? colors.coral : colors.surfaceMuted,
+                  },
+                ]}
+              >
+                <Ionicons name={drawMode ? 'pencil' : 'hand-left-outline'} size={14} color={drawMode ? '#FFFFFF' : colors.text} />
+                <Text style={{ fontSize: 11.5, fontWeight: '700', color: drawMode ? '#FFFFFF' : colors.text }}>
+                  {drawMode ? 'Draw On' : 'Scroll'}
+                </Text>
+              </AnimatedPressable>
+            </View>
+
+            {/* Pen Tools + Ink Colors + Undo/Clear */}
+            <View style={styles.toolRow}>
+              {(['pen', 'highlighter', 'eraser'] as DrawTool[]).map((t) => {
+                const active = drawTool === t;
+                const icon = t === 'pen' ? 'brush-outline' : t === 'highlighter' ? 'color-wand-outline' : 'backspace-outline';
+                return (
+                  <AnimatedPressable
+                    key={t}
+                    onPress={() => {
+                      setDrawTool(t);
+                      setDrawMode(true);
+                    }}
+                    style={[
+                      styles.toolIconBtn,
+                      {
+                        backgroundColor: active ? colors.surfaceCoralSoft : colors.surfaceMuted,
+                        borderColor: active ? colors.coral : 'transparent',
+                      },
+                    ]}
+                    accessibilityLabel={t}
+                  >
+                    <Ionicons name={icon} size={16} color={active ? colors.coral : colors.text} />
+                  </AnimatedPressable>
+                );
+              })}
+
+              <View style={styles.swatchRow}>
+                {PEN_COLORS.map((c) => {
+                  const swatchColor = surface.isDarkSurface ? c.dark : c.light;
+                  const active = penColorId === c.id && drawTool !== 'eraser';
+                  return (
+                    <AnimatedPressable
+                      key={c.id}
+                      onPress={() => {
+                        setPenColorId(c.id);
+                        if (drawTool === 'eraser') setDrawTool('pen');
+                        setDrawMode(true);
+                      }}
+                      style={[
+                        styles.penSwatch,
+                        {
+                          backgroundColor: swatchColor,
+                          borderColor: active ? colors.coral : 'transparent',
+                          borderWidth: active ? 2.5 : 0,
+                        },
+                      ]}
+                      accessibilityLabel={`${c.label} pen`}
+                    >
+                      <View />
+                    </AnimatedPressable>
+                  );
+                })}
+              </View>
+
+              <AnimatedPressable
+                onPress={() => setStrokeWidth((w) => (w === 3 ? 6 : w === 6 ? 1.8 : 3))}
+                style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
+                accessibilityLabel="Stroke thickness"
+              >
+                <Text style={{ fontSize: 11, fontWeight: '800', color: colors.text }}>
+                  {strokeWidth < 2.5 ? 'S' : strokeWidth < 5 ? 'M' : 'L'}
+                </Text>
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={() => setStrokes((prev) => prev.slice(0, -1))}
+                style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
+                accessibilityLabel="Undo stroke"
+              >
+                <Ionicons name="arrow-undo" size={15} color={colors.text} />
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={() => setStrokes([])}
+                style={[styles.toolIconBtn, { backgroundColor: colors.surfaceMuted }]}
+                accessibilityLabel="Clear drawings"
+              >
+                <Ionicons name="trash-outline" size={15} color={colors.text} />
+              </AnimatedPressable>
+            </View>
           </View>
 
-          {/* Selected Element Re-Explanation Box */}
-          {selectedElement && (
-            <View
-              style={[
-                styles.explainBox,
-                { backgroundColor: colors.surface, borderColor: colors.coral },
-              ]}
-            >
-              <Text style={[styles.explainTitle, { color: colors.coral }]}>
-                Re-explaining: {selectedElement.label}
+          {/* REAL INTERACTIVE DRAWING CANVAS (Student + Molly Vector Strokes) */}
+          <View
+            style={[
+              styles.canvasBox,
+              { backgroundColor: surface.bg, borderColor: surface.border },
+            ]}
+          >
+            <View style={styles.canvasHeaderRow}>
+              <Text style={[styles.canvasBadge, { color: surface.isDarkSurface ? '#86EFAC' : '#16A34A' }]}>
+                INTERACTIVE CANVAS · WRITE OR DRAW FREELY (E.G. 1 + 1 = 2)
               </Text>
-              <Text style={[styles.explainText, { color: colors.text }]}>
-                {selectedElement.explanation}
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {isPlaying ? (
+                  <AnimatedPressable onPress={handlePauseOrInterrupt} style={styles.miniControl}>
+                    <Ionicons name="pause" size={13} color="#FFFFFF" />
+                    <Text style={styles.miniControlText}>Pause</Text>
+                  </AnimatedPressable>
+                ) : isPaused ? (
+                  <AnimatedPressable
+                    onPress={handleResume}
+                    style={[styles.miniControl, { backgroundColor: '#16A34A' }]}
+                  >
+                    <Ionicons name="play" size={13} color="#FFFFFF" />
+                    <Text style={styles.miniControlText}>Resume</Text>
+                  </AnimatedPressable>
+                ) : null}
+                {boardCards.length > 0 && (
+                  <AnimatedPressable
+                    onPress={handleSaveSession}
+                    style={[styles.miniControl, { backgroundColor: '#6366F1' }]}
+                  >
+                    <Ionicons name="bookmark" size={12} color="#FFFFFF" />
+                  </AnimatedPressable>
+                )}
+              </View>
+            </View>
+
+            {/* Freehand Touch/Mouse SVG Drawing Surface */}
+            <View
+              {...panResponder.panHandlers}
+              style={[styles.drawingPad, { borderColor: surface.grid }]}
+            >
+              <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+                {strokes.map((s) => (
+                  <Path
+                    key={s.id}
+                    d={s.d}
+                    stroke={s.color}
+                    strokeWidth={s.width}
+                    strokeOpacity={s.opacity}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ))}
+                {activePath ? (
+                  <Path
+                    d={activePath}
+                    stroke={drawTool === 'eraser' ? surface.bg : resolvedPenColor}
+                    strokeWidth={drawTool === 'eraser' ? 20 : drawTool === 'highlighter' ? 14 : strokeWidth}
+                    strokeOpacity={drawTool === 'highlighter' ? 0.34 : 1}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                ) : null}
+              </Svg>
+              {strokes.length === 0 && !activePath && (
+                <Text
+                  pointerEvents="none"
+                  style={[
+                    styles.canvasPlaceholder,
+                    { color: surface.isDarkSurface ? 'rgba(255,255,255,0.35)' : 'rgba(30,41,59,0.32)' },
+                  ]}
+                >
+                  Draw equations, diagrams, or notes here with your finger or mouse
+                </Text>
+              )}
+            </View>
+
+            {/* Multi-Color Semantic AI Teaching Notes on the Board */}
+            <View style={styles.semanticList}>
+              {boardCards.length === 0 ? (
+                <Text
+                  style={[
+                    styles.emptyNotes,
+                    { color: surface.isDarkSurface ? 'rgba(255,255,255,0.55)' : '#64748B' },
+                  ]}
+                >
+                  Tap “Teach” above or ask Molly below — her explanations, formulas, tips, examples & solutions appear here in color-coded blocks.
+                </Text>
+              ) : (
+                boardCards.map((card) => {
+                  const sem = getSemanticStyle(card.role, surface.isDarkSurface);
+                  const active = selectedCard?.id === card.id;
+                  return (
+                    <AnimatedPressable
+                      key={card.id}
+                      onPress={() => handleTapBoardCard(card)}
+                      style={[
+                        styles.semanticCard,
+                        {
+                          backgroundColor: sem.cardBg,
+                          borderLeftColor: sem.accent,
+                          borderColor: active ? colors.coral : 'transparent',
+                        },
+                      ]}
+                    >
+                      <View style={styles.semanticTopRow}>
+                        <Ionicons name={sem.icon} size={14} color={sem.accent} />
+                        <Text style={[styles.semanticTag, { color: sem.accent }]}>
+                          {sem.tag} · {card.label}
+                        </Text>
+                      </View>
+                      <Text style={[styles.semanticContent, { color: sem.textColor }]}>
+                        {card.content}
+                      </Text>
+                    </AnimatedPressable>
+                  );
+                })
+              )}
+            </View>
+          </View>
+
+          {selectedCard && (
+            <View style={[styles.reexplainBox, { backgroundColor: colors.surface, borderColor: colors.coral }]}>
+              <Text style={[styles.reexplainTitle, { color: colors.coral }]}>
+                Molly re-explaining: {selectedCard.label}
+              </Text>
+              <Text style={[styles.reexplainText, { color: colors.text }]}>
+                {selectedCard.explanation}
               </Text>
             </View>
           )}
         </ScrollView>
+
+        {/* Persistent Live Interrupt & Talk Bar */}
+        <View style={[styles.liveComposer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+          <AnimatedPressable
+            onPress={handleVoiceMic}
+            style={[
+              styles.micBtn,
+              { backgroundColor: isListening ? colors.coral : colors.surfaceMint },
+            ]}
+            accessibilityLabel="Speak to interrupt Molly"
+          >
+            <Ionicons
+              name={isListening ? 'radio' : 'mic'}
+              size={19}
+              color={isListening ? '#FFFFFF' : colors.mintDark}
+            />
+          </AnimatedPressable>
+          <TextInput
+            value={liveInput}
+            onChangeText={setLiveInput}
+            placeholder={isListening ? 'Listening...' : 'Interrupt or ask Molly live on the board...'}
+            placeholderTextColor={colors.textMuted}
+            style={[styles.liveInput, { color: colors.text }]}
+            onSubmitEditing={() => handleAskLiveQuestion()}
+          />
+          <AnimatedPressable
+            onPress={() => handleAskLiveQuestion()}
+            disabled={answeringLive}
+            style={[styles.sendBtn, { backgroundColor: colors.coral }]}
+          >
+            <Ionicons name="send" size={16} color="#FFFFFF" />
+          </AnimatedPressable>
+        </View>
       </SafeAreaView>
     </AppBackground>
   );
@@ -370,83 +751,146 @@ export default function LiveTeacherScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  scroll: { paddingHorizontal: 18, paddingBottom: 40, gap: 14 },
+  scroll: { paddingHorizontal: 14, paddingBottom: 18, gap: 10 },
   modePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-  },
-  modeText: { fontSize: 11.5, fontWeight: '700', flex: 1 },
-  stageCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: 22,
-    borderWidth: 1,
-  },
-  stageTitle: { fontSize: 16, fontWeight: '800' },
-  topicInput: {
-    borderWidth: 1,
-    borderRadius: 12,
+    gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 14,
-  },
-  controlsRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  primaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 13,
-    borderRadius: 999,
-  },
-  primaryBtnText: { color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' },
-  secondaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  secondaryText: { fontSize: 13, fontWeight: '800' },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  board: {
-    borderRadius: 22,
-    borderWidth: 2,
-    padding: 16,
-    minHeight: 240,
-    gap: 12,
-  },
-  boardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  boardLabel: { color: '#86E88A', fontSize: 11, fontWeight: '800', letterSpacing: 0.6 },
-  boardHint: { color: '#A3B8AD', fontSize: 11 },
-  boardEmpty: { alignItems: 'center', justifyContent: 'center', paddingVertical: 44, gap: 10 },
-  boardEmptyText: { color: '#C5D4CC', textAlign: 'center', fontSize: 13, lineHeight: 19 },
-  boardItem: {
-    backgroundColor: '#1E3028',
     borderRadius: 14,
+  },
+  modeText: { fontSize: 11.5, fontWeight: '700', flex: 1 },
+  topicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  topicInput: { flex: 1, fontSize: 14.5, fontWeight: '700', paddingVertical: 4 },
+  startPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
+  startPillText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  toolbarCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 10,
+    gap: 8,
+  },
+  toolRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    flexWrap: 'wrap',
+  },
+  toolSectionLbl: { fontSize: 11.5, fontWeight: '700' },
+  swatchRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  boardSwatch: { width: 24, height: 24, borderRadius: 12 },
+  penSwatch: { width: 20, height: 20, borderRadius: 10 },
+  modeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  toolIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: '#2E473B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  canvasBox: {
+    borderRadius: 22,
+    borderWidth: 1.5,
+    padding: 12,
+    gap: 10,
+  },
+  canvasHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  canvasBadge: { fontSize: 10, fontWeight: '900', letterSpacing: 0.4, flex: 1 },
+  miniControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FF6B4A',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  miniControlText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
+  drawingPad: {
+    height: 175,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  canvasPlaceholder: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  semanticList: { gap: 8 },
+  emptyNotes: { fontSize: 12.5, lineHeight: 18, textAlign: 'center', paddingVertical: 8 },
+  semanticCard: {
+    borderRadius: 14,
+    borderLeftWidth: 4,
+    borderWidth: 1,
+    padding: 11,
+    gap: 4,
+  },
+  semanticTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  semanticTag: { fontSize: 10.5, fontWeight: '900', letterSpacing: 0.4, textTransform: 'uppercase' },
+  semanticContent: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  reexplainBox: {
+    borderRadius: 16,
+    borderWidth: 1.5,
     padding: 12,
     gap: 4,
   },
-  boardItemLabel: { color: '#86E88A', fontSize: 11, fontWeight: '700' },
-  boardItemContent: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  explainBox: { borderRadius: 18, borderWidth: 1.5, padding: 14, gap: 6 },
-  explainTitle: { fontSize: 13, fontWeight: '800' },
-  explainText: { fontSize: 13.5, lineHeight: 20 },
+  reexplainTitle: { fontSize: 12.5, fontWeight: '800' },
+  reexplainText: { fontSize: 13.5, lineHeight: 19 },
+  liveComposer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  micBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveInput: { flex: 1, fontSize: 14, paddingVertical: 6 },
+  sendBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

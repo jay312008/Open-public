@@ -52,8 +52,8 @@ export function JourneyRoad({
     measuredWidth > 0 ? measuredWidth : Math.max(280, Math.min(screenWidth - 32, 358));
 
   const isEmpty = levels.length === 0;
-  const displayCount = isEmpty ? 3 : levels.length;
-  const segmentHeight = 165;
+  const displayCount = isEmpty ? 5 : levels.length;
+  const segmentHeight = 185;
   const topPadding = 130;
   const bottomPadding = 120;
   const totalHeight = topPadding + displayCount * segmentHeight + bottomPadding;

@@ -378,7 +378,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             .map((t) => ({ sub, topic: t }))
         );
 
-        const levels: JourneyLevelNode[] = allCandidateTopics.slice(0, 20).map(({ sub, topic }, idx) => ({
+        const baseLevels: JourneyLevelNode[] = allCandidateTopics.slice(0, 20).map(({ sub, topic }, idx) => ({
           id: `lvl-${topic.id}`,
           levelNumber: idx + 1,
           subjectId: sub.id,
@@ -399,6 +399,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               order: lIdx + 1,
             };
           }),
+        }));
+
+        // Expand short roadmaps (< 8 levels) with progressive Practice Drill & Exam Mastery stages
+        const expandedLevels: JourneyLevelNode[] = [...baseLevels];
+        const stageTemplates = [
+          { suffix: 'drill', label: 'Guided Practice & Drills' },
+          { suffix: 'checkpoint', label: 'Exam Checkpoint & Past Questions' },
+          { suffix: 'mastery', label: 'Final Mastery & Speed Review' },
+        ];
+        let templateIdx = 0;
+        while (expandedLevels.length < 8 && baseLevels.length > 0 && templateIdx < stageTemplates.length) {
+          const tpl = stageTemplates[templateIdx];
+          for (const base of baseLevels) {
+            if (expandedLevels.length >= 10) break;
+            const nextNum = expandedLevels.length + 1;
+            const stageId = `lvl-${base.topicId}-${tpl.suffix}`;
+            expandedLevels.push({
+              id: stageId,
+              levelNumber: nextNum,
+              subjectId: base.subjectId,
+              subjectName: base.subjectName,
+              topicId: base.topicId,
+              topicTitle: `${base.topicTitle}: ${tpl.label}`,
+              estimatedMinutes: Math.max(30, Math.round(base.estimatedMinutes * 0.6)),
+              lessons: base.lessons.slice(0, 3).map((l, i) => ({
+                ...l,
+                id: `jl-${stageId}-${i + 1}`,
+                levelId: stageId,
+                title: `${tpl.label.split(' ')[0]}: ${l.title}`,
+                order: i + 1,
+              })),
+            });
+          }
+          templateIdx += 1;
+        }
+
+        const levels: JourneyLevelNode[] = expandedLevels.slice(0, 20).map((lvl, idx) => ({
+          ...lvl,
+          levelNumber: idx + 1,
         }));
 
         const totalMinutes = levels.reduce((acc, l) => acc + l.estimatedMinutes, 0);
