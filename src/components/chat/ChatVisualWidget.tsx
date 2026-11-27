@@ -1,54 +1,414 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Line, Path, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { useTheme } from '@/theme/ThemeContext';
+import { evaluateMathExpression } from '@/lib/safeMath';
 
-export type ChatWidgetType = 'wave' | 'parabola' | 'geometry' | 'calculator' | 'science_diagram';
+export type ChatWidgetType =
+  | 'function_plot'
+  | 'canvas_diagram'
+  | 'chart'
+  | 'wave'
+  | 'calculator';
+
+export interface DiagramPrimitive {
+  kind: 'line' | 'circle' | 'rect' | 'path' | 'text';
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  cx?: number;
+  cy?: number;
+  r?: number;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  d?: string;
+  content?: string;
+  color?: string;
+  fill?: string;
+  dashed?: boolean;
+}
+
+export interface CalcVariable {
+  name: string;
+  label: string;
+  defaultValue: number;
+}
 
 export interface ChatWidgetSpec {
   type: ChatWidgetType;
   title?: string;
   caption?: string;
-  variant?: string; // e.g., 'transverse' | 'longitudinal' | 'triangle' | 'circle' | 'bonding' | 'photosynthesis'
+  // function_plot
+  expression?: string; // e.g., "2*x + 3", "sin(x)", "x^2 - 4*x + 3", "x^3 - 3*x"
+  xMin?: number;
+  xMax?: number;
+  yMin?: number;
+  yMax?: number;
+  points?: { x: number; y: number; label?: string }[];
+  // canvas_diagram
+  primitives?: DiagramPrimitive[];
+  // chart
+  labels?: string[];
+  values?: number[];
+  unit?: string;
+  // wave
+  variant?: string;
+  frequency?: number;
+  amplitude?: number;
+  // calculator
+  formulaExpr?: string; // e.g., "f * l", "m * a", "pi * r^2"
+  resultLabel?: string; // e.g., "Wave speed (m/s)"
+  variables?: CalcVariable[];
 }
 
 export function ChatVisualWidget({ widget }: { widget: ChatWidgetSpec }) {
   switch (widget.type) {
+    case 'function_plot':
+      return <DynamicFunctionPlotWidget widget={widget} />;
+    case 'canvas_diagram':
+      return <DynamicCanvasDiagramWidget widget={widget} />;
+    case 'chart':
+      return <DynamicBarChartWidget widget={widget} />;
     case 'wave':
-      return <WaveBoardWidget title={widget.title} caption={widget.caption} variant={widget.variant} />;
-    case 'parabola':
-      return <ParabolaBoardWidget title={widget.title} caption={widget.caption} />;
-    case 'geometry':
-      return <GeometryBoardWidget title={widget.title} caption={widget.caption} variant={widget.variant} />;
+      return <DynamicWaveBoardWidget widget={widget} />;
     case 'calculator':
-      return <MiniCalculatorWidget title={widget.title} variant={widget.variant} />;
-    case 'science_diagram':
-      return <ScienceDiagramWidget title={widget.title} caption={widget.caption} variant={widget.variant} />;
+      return <DynamicCalculatorWidget widget={widget} />;
     default:
       return null;
   }
 }
 
-/* 1. INTERACTIVE WAVE BOARD WITH RULER & FREQUENCY/AMPLITUDE CONTROLS */
-function WaveBoardWidget({
-  title,
-  caption,
-  variant,
-}: {
-  title?: string;
-  caption?: string;
-  variant?: string;
-}) {
+/* 1. DYNAMIC MATH FUNCTION PLOTTER — plots ANY equation (linear, quadratic, trig, cubic, exp, etc.) + editable live! */
+function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
   const { colors, isDark } = useTheme();
-  const [freq, setFreq] = useState(2); // cycles across board
-  const [amp, setAmp] = useState(26); // pixel amplitude
+  const [expr, setExpr] = useState(widget.expression || 'x^2 - 4*x + 3');
+  const [xRange, setXRange] = useState(Math.max(Math.abs(widget.xMin ?? -6), Math.abs(widget.xMax ?? 6), 5));
+
+  const W = 264;
+  const H = 160;
+  const pad = 22;
+
+  const { segments, originX, originY, yMin, yMax, mappedPoints } = useMemo(() => {
+    const xMinVal = -xRange;
+    const xMaxVal = xRange;
+    const samples: { x: number; y: number }[] = [];
+    const steps = 120;
+    for (let i = 0; i <= steps; i++) {
+      const x = xMinVal + (i / steps) * (xMaxVal - xMinVal);
+      const y = evaluateMathExpression(expr, { x });
+      samples.push({ x, y });
+    }
+
+    const finiteYs = samples.map((s) => s.y).filter((y) => Number.isFinite(y) && Math.abs(y) < 1000);
+    const computedMin = finiteYs.length ? Math.min(...finiteYs, -2) : -6;
+    const computedMax = finiteYs.length ? Math.max(...finiteYs, 2) : 6;
+    const yMinVal = typeof widget.yMin === 'number' ? widget.yMin : Math.max(-25, Math.floor(computedMin - 1));
+    const yMaxVal = typeof widget.yMax === 'number' ? widget.yMax : Math.min(25, Math.ceil(computedMax + 1));
+
+    const toPxX = (x: number) => pad + ((x - xMinVal) / (xMaxVal - xMinVal)) * (W - pad * 2);
+    const toPxY = (y: number) => H - pad - ((y - yMinVal) / Math.max(0.001, yMaxVal - yMinVal)) * (H - pad * 2);
+
+    const segs: string[] = [];
+    let current = '';
+    for (const pt of samples) {
+      if (!Number.isFinite(pt.y) || pt.y < yMinVal - 5 || pt.y > yMaxVal + 5) {
+        if (current) {
+          segs.push(current);
+          current = '';
+        }
+        continue;
+      }
+      const px = toPxX(pt.x);
+      const py = toPxY(pt.y);
+      current += `${current ? ' L ' : 'M '}${px.toFixed(1)} ${py.toFixed(1)}`;
+    }
+    if (current) segs.push(current);
+
+    const pts = (widget.points ?? [])
+      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+      .map((p) => ({
+        px: toPxX(p.x),
+        py: toPxY(p.y),
+        label: p.label ?? `(${p.x},${p.y})`,
+      }));
+
+    return {
+      segments: segs,
+      originX: Math.max(pad, Math.min(W - pad, toPxX(0))),
+      originY: Math.max(pad, Math.min(H - pad, toPxY(0))),
+      yMin: yMinVal,
+      yMax: yMaxVal,
+      mappedPoints: pts,
+    };
+  }, [expr, xRange, widget.yMin, widget.yMax, widget.points]);
+
+  return (
+    <View
+      style={[
+        styles.boardWrap,
+        { backgroundColor: isDark ? '#1A2420' : '#FAF9FF', borderColor: colors.border },
+      ]}
+    >
+      <View style={styles.boardTop}>
+        <Text style={[styles.boardTitle, { color: colors.text }]} numberOfLines={1}>
+          {widget.title ?? `Graph of y = ${expr}`}
+        </Text>
+        <View style={styles.pillToggleRow}>
+          <AnimatedPressable
+            onPress={() => setXRange((r) => Math.max(3, r - 2))}
+            style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
+          >
+            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.text }}>Zoom +</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={() => setXRange((r) => Math.min(16, r + 2))}
+            style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
+          >
+            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.text }}>Zoom -</Text>
+          </AnimatedPressable>
+        </View>
+      </View>
+
+      {/* Editable live equation bar so student can coordinate/change the graph */}
+      <View
+        style={[
+          styles.eqInputRow,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={{ fontSize: 12, fontWeight: '800', color: colors.purple }}>y =</Text>
+        <TextInput
+          value={expr}
+          onChangeText={setExpr}
+          placeholder="e.g. sin(x), 2*x+3, x^2-4"
+          placeholderTextColor={colors.textMuted}
+          style={[styles.eqInput, { color: colors.text }]}
+        />
+      </View>
+
+      <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+        {/* Subtle grid */}
+        {[0.25, 0.5, 0.75].map((f) => (
+          <React.Fragment key={f}>
+            <Line
+              x1={pad + f * (W - pad * 2)}
+              y1={pad}
+              x2={pad + f * (W - pad * 2)}
+              y2={H - pad}
+              stroke={colors.border}
+              strokeWidth={0.8}
+              strokeDasharray="3,3"
+            />
+            <Line
+              x1={pad}
+              y1={pad + f * (H - pad * 2)}
+              x2={W - pad}
+              y2={pad + f * (H - pad * 2)}
+              stroke={colors.border}
+              strokeWidth={0.8}
+              strokeDasharray="3,3"
+            />
+          </React.Fragment>
+        ))}
+
+        {/* X & Y Axes */}
+        <Line x1={pad} y1={originY} x2={W - pad} y2={originY} stroke={colors.textMuted} strokeWidth={1.5} />
+        <Line x1={originX} y1={pad} x2={originX} y2={H - pad} stroke={colors.textMuted} strokeWidth={1.5} />
+        <Polygon points={`${W - pad},${originY} ${W - pad - 6},${originY - 3.5} ${W - pad - 6},${originY + 3.5}`} fill={colors.textMuted} />
+        <Polygon points={`${originX},${pad} ${originX - 3.5},${pad + 6} ${originX + 3.5},${pad + 6}`} fill={colors.textMuted} />
+
+        {/* Dynamic Function Curve */}
+        {segments.map((d, idx) => (
+          <Path
+            key={idx}
+            d={d}
+            fill="none"
+            stroke="#7C3AED"
+            strokeWidth={2.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+
+        {/* Key Highlighted Points */}
+        {mappedPoints.map((pt, i) => (
+          <React.Fragment key={i}>
+            <Circle cx={pt.px} cy={pt.py} r={4} fill="#FF6B4A" />
+            <SvgText x={pt.px + 5} y={pt.py - 5} fontSize={9} fontWeight="bold" fill="#FF6B4A">
+              {pt.label}
+            </SvgText>
+          </React.Fragment>
+        ))}
+
+        <SvgText x={W - pad + 4} y={originY + 3} fontSize={10} fontWeight="bold" fill={colors.textSecondary}>
+          x
+        </SvgText>
+        <SvgText x={originX + 5} y={pad + 4} fontSize={10} fontWeight="bold" fill={colors.textSecondary}>
+          y
+        </SvgText>
+        <SvgText x={pad} y={H - 6} fontSize={8.5} fill={colors.textMuted}>
+          x: [{-xRange}, {xRange}]  y: [{yMin}, {yMax}]
+        </SvgText>
+      </Svg>
+
+      {widget.caption && <Text style={[styles.caption, { color: colors.purple }]}>{widget.caption}</Text>}
+    </View>
+  );
+}
+
+/* 2. DYNAMIC VECTOR CANVAS DIAGRAM — AI draws custom shapes, arrows, molecules, forces, circuits, geometry! */
+function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
+  const { colors, isDark } = useTheme();
+  const primitives = widget.primitives ?? [];
+
+  return (
+    <View
+      style={[
+        styles.boardWrap,
+        { backgroundColor: isDark ? '#1A2420' : '#F8FBFF', borderColor: colors.border },
+      ]}
+    >
+      {widget.title && <Text style={[styles.boardTitle, { color: colors.text }]}>{widget.title}</Text>}
+      <Svg width={264} height={150} viewBox="0 0 264 150">
+        {primitives.map((p, idx) => {
+          const stroke = p.color || '#7C3AED';
+          if (p.kind === 'line') {
+            return (
+              <Line
+                key={idx}
+                x1={p.x1 ?? 0}
+                y1={p.y1 ?? 0}
+                x2={p.x2 ?? 100}
+                y2={p.y2 ?? 100}
+                stroke={stroke}
+                strokeWidth={2.2}
+                strokeDasharray={p.dashed ? '4,4' : undefined}
+                strokeLinecap="round"
+              />
+            );
+          }
+          if (p.kind === 'circle') {
+            return (
+              <Circle
+                key={idx}
+                cx={p.cx ?? 132}
+                cy={p.cy ?? 75}
+                r={p.r ?? 20}
+                stroke={stroke}
+                strokeWidth={2.2}
+                fill={p.fill ?? 'rgba(124,92,250,0.12)'}
+              />
+            );
+          }
+          if (p.kind === 'rect') {
+            return (
+              <Rect
+                key={idx}
+                x={p.x ?? 40}
+                y={p.y ?? 40}
+                width={p.w ?? 60}
+                height={p.h ?? 36}
+                rx={8}
+                stroke={stroke}
+                strokeWidth={2}
+                fill={p.fill ?? 'rgba(59,130,246,0.12)'}
+              />
+            );
+          }
+          if (p.kind === 'path' && p.d) {
+            return (
+              <Path
+                key={idx}
+                d={p.d}
+                stroke={stroke}
+                strokeWidth={2.4}
+                fill={p.fill ?? 'none'}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          }
+          if (p.kind === 'text' && p.content) {
+            return (
+              <SvgText
+                key={idx}
+                x={p.x ?? 20}
+                y={p.y ?? 20}
+                fontSize={10.5}
+                fontWeight="bold"
+                fill={p.color || colors.text}
+              >
+                {p.content}
+              </SvgText>
+            );
+          }
+          return null;
+        })}
+      </Svg>
+      {widget.caption && <Text style={[styles.caption, { color: colors.purple }]}>{widget.caption}</Text>}
+    </View>
+  );
+}
+
+/* 3. DYNAMIC BAR CHART */
+function DynamicBarChartWidget({ widget }: { widget: ChatWidgetSpec }) {
+  const { colors, isDark } = useTheme();
+  const labels = widget.labels ?? ['A', 'B', 'C', 'D'];
+  const values = widget.values ?? [40, 75, 55, 90];
+  const maxVal = Math.max(...values, 1);
+  const barColors = ['#7C3AED', '#FF6B4A', '#16A34A', '#2563EB', '#F59E0B'];
+
+  return (
+    <View
+      style={[
+        styles.boardWrap,
+        { backgroundColor: isDark ? '#1A2420' : '#FAF9FF', borderColor: colors.border },
+      ]}
+    >
+      {widget.title && <Text style={[styles.boardTitle, { color: colors.text }]}>{widget.title}</Text>}
+      <View style={styles.barChartArea}>
+        {values.map((v, i) => {
+          const pct = Math.max(8, Math.round((v / maxVal) * 100));
+          return (
+            <View key={i} style={styles.barCol}>
+              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.text }}>
+                {v}
+                {widget.unit ? widget.unit : ''}
+              </Text>
+              <View style={styles.barTrack}>
+                <View
+                  style={[
+                    styles.barFill,
+                    { height: `${pct}%`, backgroundColor: barColors[i % barColors.length] },
+                  ]}
+                />
+              </View>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
+                {labels[i] ?? `${i + 1}`}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      {widget.caption && <Text style={[styles.caption, { color: colors.purple }]}>{widget.caption}</Text>}
+    </View>
+  );
+}
+
+/* 4. DYNAMIC INTERACTIVE WAVE BOARD WITH RULER */
+function DynamicWaveBoardWidget({ widget }: { widget: ChatWidgetSpec }) {
+  const { colors, isDark } = useTheme();
+  const [freq, setFreq] = useState(widget.frequency ?? 2);
+  const [amp, setAmp] = useState(widget.amplitude ?? 26);
   const [mode, setMode] = useState<'transverse' | 'longitudinal'>(
-    variant === 'longitudinal' ? 'longitudinal' : 'transverse'
+    widget.variant === 'longitudinal' ? 'longitudinal' : 'transverse'
   );
 
-  // Build smooth transverse sine wave SVG path
   const width = 260;
   const midY = 66;
   const startX = 20;
@@ -61,10 +421,8 @@ function WaveBoardWidget({
     const y = midY - Math.sin(t * Math.PI * 2 * freq) * amp;
     points.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`);
   }
-  const wavePath = points.join(' ');
-  const wavelengthPx = span / freq;
+  const wavelengthPx = span / Math.max(0.5, freq);
 
-  // Longitudinal compression vertical bars
   const longBars: number[] = [];
   for (let i = 0; i < 28; i++) {
     const base = startX + (i / 27) * span;
@@ -81,7 +439,7 @@ function WaveBoardWidget({
     >
       <View style={styles.boardTop}>
         <Text style={[styles.boardTitle, { color: colors.text }]}>
-          {title ?? (mode === 'transverse' ? 'Transverse Wave Board' : 'Longitudinal Wave Board')}
+          {widget.title ?? (mode === 'transverse' ? 'Transverse Wave Board' : 'Longitudinal Wave Board')}
         </Text>
         <View style={styles.pillToggleRow}>
           {(['transverse', 'longitudinal'] as const).map((m) => (
@@ -102,7 +460,6 @@ function WaveBoardWidget({
       </View>
 
       <Svg width={width} height={138} viewBox={`0 0 ${width} 138`}>
-        {/* Ruler bar at top */}
         <Rect x={startX} y={6} width={span} height={14} rx={3} fill={isDark ? '#2A3832' : '#EFEAFD'} />
         {Array.from({ length: 11 }).map((_, idx) => {
           const rx = startX + (idx / 10) * span;
@@ -125,7 +482,6 @@ function WaveBoardWidget({
           );
         })}
 
-        {/* Equilibrium center dashed line */}
         <Line
           x1={startX}
           y1={midY}
@@ -138,8 +494,7 @@ function WaveBoardWidget({
 
         {mode === 'transverse' ? (
           <>
-            <Path d={wavePath} fill="none" stroke="#7C3AED" strokeWidth={2.8} strokeLinecap="round" />
-            {/* Amplitude arrow */}
+            <Path d={points.join(' ')} fill="none" stroke="#7C3AED" strokeWidth={2.8} strokeLinecap="round" />
             <Line
               x1={startX + wavelengthPx * 0.25}
               y1={midY}
@@ -149,255 +504,80 @@ function WaveBoardWidget({
               strokeWidth={2}
             />
             <Circle cx={startX + wavelengthPx * 0.25} cy={midY - amp} r={3.5} fill="#FF6B4A" />
-            <SvgText
-              x={startX + wavelengthPx * 0.25 + 5}
-              y={midY - amp / 2}
-              fontSize={9.5}
-              fontWeight="bold"
-              fill="#FF6B4A"
-            >
+            <SvgText x={startX + wavelengthPx * 0.25 + 5} y={midY - amp / 2} fontSize={9.5} fontWeight="bold" fill="#FF6B4A">
               A
             </SvgText>
-            {/* Wavelength λ bracket */}
-            <Line
-              x1={startX}
-              y1={114}
-              x2={Math.min(endX, startX + wavelengthPx)}
-              y2={114}
-              stroke="#16A34A"
-              strokeWidth={2}
-            />
-            <SvgText
-              x={startX + Math.min(span, wavelengthPx) / 2 - 14}
-              y={128}
-              fontSize={10}
-              fontWeight="bold"
-              fill="#16A34A"
-            >
+            <Line x1={startX} y1={114} x2={Math.min(endX, startX + wavelengthPx)} y2={114} stroke="#16A34A" strokeWidth={2} />
+            <SvgText x={startX + Math.min(span, wavelengthPx) / 2 - 14} y={128} fontSize={10} fontWeight="bold" fill="#16A34A">
               λ (wavelength)
             </SvgText>
           </>
         ) : (
           <>
             {longBars.map((bx, i) => (
-              <Line
-                key={i}
-                x1={bx}
-                y1={42}
-                x2={bx}
-                y2={94}
-                stroke="#2563EB"
-                strokeWidth={2}
-                strokeLinecap="round"
-              />
+              <Line key={i} x1={bx} y1={42} x2={bx} y2={94} stroke="#2563EB" strokeWidth={2} strokeLinecap="round" />
             ))}
             <SvgText x={startX + 10} y={118} fontSize={9.5} fontWeight="bold" fill="#2563EB">
-              Compression (dense)  ↔  Rarefaction (spread)
+              Compression (dense) ↔ Rarefaction (spread)
             </SvgText>
           </>
         )}
       </Svg>
 
-      {/* Interactive Local Controls */}
       <View style={styles.controlBar}>
         <Text style={[styles.ctrlText, { color: colors.textSecondary }]}>Freq: {freq} Hz</Text>
-        <AnimatedPressable
-          onPress={() => setFreq((f) => Math.max(1, f - 1))}
-          style={[styles.stepBtn, { backgroundColor: colors.surfaceMuted }]}
-        >
+        <AnimatedPressable onPress={() => setFreq((f) => Math.max(1, f - 1))} style={[styles.stepBtn, { backgroundColor: colors.surfaceMuted }]}>
           <Text style={{ fontWeight: '900', color: colors.text }}>-</Text>
         </AnimatedPressable>
-        <AnimatedPressable
-          onPress={() => setFreq((f) => Math.min(4, f + 1))}
-          style={[styles.stepBtn, { backgroundColor: colors.surfaceMuted }]}
-        >
+        <AnimatedPressable onPress={() => setFreq((f) => Math.min(5, f + 1))} style={[styles.stepBtn, { backgroundColor: colors.surfaceMuted }]}>
           <Text style={{ fontWeight: '900', color: colors.text }}>+</Text>
         </AnimatedPressable>
-
         {mode === 'transverse' && (
           <>
-            <Text style={[styles.ctrlText, { color: colors.textSecondary, marginLeft: 8 }]}>
-              Amp: {amp}
-            </Text>
-            <AnimatedPressable
-              onPress={() => setAmp((a) => Math.max(12, a - 6))}
-              style={[styles.stepBtn, { backgroundColor: colors.surfaceMuted }]}
-            >
+            <Text style={[styles.ctrlText, { color: colors.textSecondary, marginLeft: 8 }]}>Amp: {amp}</Text>
+            <AnimatedPressable onPress={() => setAmp((a) => Math.max(10, a - 6))} style={[styles.stepBtn, { backgroundColor: colors.surfaceMuted }]}>
               <Text style={{ fontWeight: '900', color: colors.text }}>-</Text>
             </AnimatedPressable>
-            <AnimatedPressable
-              onPress={() => setAmp((a) => Math.min(34, a + 6))}
-              style={[styles.stepBtn, { backgroundColor: colors.surfaceMuted }]}
-            >
+            <AnimatedPressable onPress={() => setAmp((a) => Math.min(36, a + 6))} style={[styles.stepBtn, { backgroundColor: colors.surfaceMuted }]}>
               <Text style={{ fontWeight: '900', color: colors.text }}>+</Text>
             </AnimatedPressable>
           </>
         )}
       </View>
 
-      {caption && <Text style={[styles.caption, { color: colors.purple }]}>{caption}</Text>}
+      {widget.caption && <Text style={[styles.caption, { color: colors.purple }]}>{widget.caption}</Text>}
     </View>
   );
 }
 
-/* 2. INTERACTIVE PARABOLA / FUNCTION GRAPH BOARD */
-function ParabolaBoardWidget({ title, caption }: { title?: string; caption?: string }) {
+/* 5. DYNAMIC FORMULA CALCULATOR — works for ANY formula the AI provides! */
+function DynamicCalculatorWidget({ widget }: { widget: ChatWidgetSpec }) {
   const { colors, isDark } = useTheme();
-  const [aVal, setAVal] = useState<number>(1);
+  const variables: CalcVariable[] = widget.variables?.length
+    ? widget.variables
+    : widget.variant === 'wave'
+    ? [
+        { name: 'f', label: 'Freq f (Hz)', defaultValue: 50 },
+        { name: 'l', label: 'λ (m)', defaultValue: 2 },
+      ]
+    : [
+        { name: 'a', label: 'a', defaultValue: 1 },
+        { name: 'b', label: 'b', defaultValue: -5 },
+        { name: 'c', label: 'c', defaultValue: 6 },
+      ];
 
-  // Build parabola y = a*(x^2) centered at (130, 82)
-  const pts: string[] = [];
-  for (let i = -30; i <= 30; i++) {
-    const xNorm = i / 10; // -3..3
-    const px = 130 + xNorm * 28;
-    const py = 84 - aVal * (xNorm * xNorm) * 7.5;
-    if (py >= 10 && py <= 118) {
-      pts.push(`${pts.length === 0 ? 'M' : 'L'} ${px.toFixed(1)} ${py.toFixed(1)}`);
-    }
+  const formulaExpr =
+    widget.formulaExpr ?? (widget.variant === 'wave' ? 'f * l' : 'b^2 - 4*a*c');
+
+  const [vals, setVals] = useState<Record<string, string>>(() =>
+    Object.fromEntries(variables.map((v) => [v.name, String(v.defaultValue)]))
+  );
+
+  const numericVars: Record<string, number> = {};
+  for (const v of variables) {
+    numericVars[v.name] = parseFloat(vals[v.name]) || 0;
   }
-
-  return (
-    <View
-      style={[
-        styles.boardWrap,
-        { backgroundColor: isDark ? '#1A2420' : '#FAF9FF', borderColor: colors.border },
-      ]}
-    >
-      <View style={styles.boardTop}>
-        <Text style={[styles.boardTitle, { color: colors.text }]}>
-          {title ?? `Graph of y = ${aVal === 1 ? '' : aVal === -1 ? '-' : aVal}x²`}
-        </Text>
-        <View style={styles.pillToggleRow}>
-          {([1, 2, -1] as const).map((val) => (
-            <AnimatedPressable
-              key={val}
-              onPress={() => setAVal(val)}
-              style={[
-                styles.miniPill,
-                { backgroundColor: aVal === val ? colors.purple : colors.surfaceMuted },
-              ]}
-            >
-              <Text style={{ fontSize: 10, fontWeight: '800', color: aVal === val ? '#FFFFFF' : colors.text }}>
-                a={val}
-              </Text>
-            </AnimatedPressable>
-          ))}
-        </View>
-      </View>
-
-      <Svg width={260} height={124} viewBox="0 0 260 124">
-        <Line x1={20} y1={84} x2={244} y2={84} stroke={colors.textMuted} strokeWidth={1.5} />
-        <Line x1={130} y1={12} x2={130} y2={116} stroke={colors.textMuted} strokeWidth={1.5} />
-        <Polygon points="244,84 237,80 237,88" fill={colors.textMuted} />
-        <Polygon points="130,10 126,17 134,17" fill={colors.textMuted} />
-        <Path d={pts.join(' ')} fill="none" stroke="#7C3AED" strokeWidth={2.8} strokeLinecap="round" />
-        <Circle cx={130} cy={84} r={4} fill="#FF6B4A" />
-        <SvgText x={246} y={87} fontSize={11} fontWeight="bold" fill={colors.textSecondary}>
-          x
-        </SvgText>
-        <SvgText x={136} y={18} fontSize={11} fontWeight="bold" fill={colors.textSecondary}>
-          y
-        </SvgText>
-      </Svg>
-
-      <Text style={[styles.caption, { color: colors.purple }]}>
-        {caption ?? (aVal > 0 ? 'a > 0: opens upward (minimum vertex)' : 'a < 0: opens downward (maximum vertex)')}
-      </Text>
-    </View>
-  );
-}
-
-/* 3. GEOMETRY BOARD WITH RULER MEASUREMENTS */
-function GeometryBoardWidget({
-  title,
-  caption,
-  variant,
-}: {
-  title?: string;
-  caption?: string;
-  variant?: string;
-}) {
-  const { colors, isDark } = useTheme();
-  const isCircle = variant === 'circle';
-  return (
-    <View
-      style={[
-        styles.boardWrap,
-        { backgroundColor: isDark ? '#1A2420' : '#F8FBFF', borderColor: colors.border },
-      ]}
-    >
-      <Text style={[styles.boardTitle, { color: colors.text }]}>
-        {title ?? (isCircle ? 'Circle Geometry Board' : 'Right Triangle · Pythagoras Board')}
-      </Text>
-      <Svg width={250} height={122} viewBox="0 0 250 122">
-        {isCircle ? (
-          <>
-            <Circle cx={125} cy={61} r={44} stroke="#2563EB" strokeWidth={2.6} fill="rgba(59,130,246,0.1)" />
-            <Line x1={125} y1={61} x2={169} y2={61} stroke="#FF6B4A" strokeWidth={2.2} />
-            <Circle cx={125} cy={61} r={3.5} fill="#FF6B4A" />
-            <SvgText x={140} y={55} fontSize={11} fontWeight="bold" fill="#FF6B4A">
-              r
-            </SvgText>
-            <SvgText x={60} y={117} fontSize={10.5} fontWeight="bold" fill={colors.textSecondary}>
-              Area = πr²   |   C = 2πr
-            </SvgText>
-          </>
-        ) : (
-          <>
-            <Polygon
-              points="55,98 185,98 55,24"
-              fill="rgba(124,92,250,0.12)"
-              stroke="#7C3AED"
-              strokeWidth={2.5}
-            />
-            <Rect x={55} y={84} width={14} height={14} fill="none" stroke="#FF6B4A" strokeWidth={1.8} />
-            <SvgText x={36} y={64} fontSize={11} fontWeight="bold" fill="#2563EB">
-              a = 3
-            </SvgText>
-            <SvgText x={112} y={114} fontSize={11} fontWeight="bold" fill="#16A34A">
-              b = 4
-            </SvgText>
-            <SvgText x={128} y={54} fontSize={11} fontWeight="bold" fill="#FF6B4A">
-              c = 5
-            </SvgText>
-          </>
-        )}
-      </Svg>
-      <Text style={[styles.caption, { color: colors.purple }]}>
-        {caption ?? (isCircle ? 'Radius connects center to circumference' : 'a² + b² = c²  ⇒  3² + 4² = 5²')}
-      </Text>
-    </View>
-  );
-}
-
-/* 4. INTERACTIVE MINI FORMULA CALCULATOR */
-function MiniCalculatorWidget({ title, variant }: { title?: string; variant?: string }) {
-  const { colors, isDark } = useTheme();
-  const isWave = variant === 'wave';
-  const [valA, setValA] = useState(isWave ? '50' : '1');
-  const [valB, setValB] = useState(isWave ? '2' : '-5');
-  const [valC, setValC] = useState('6');
-
-  let resultText = '';
-  if (isWave) {
-    const f = parseFloat(valA) || 0;
-    const lam = parseFloat(valB) || 0;
-    resultText = `Wave speed v = f × λ = ${(f * lam).toFixed(2)} m/s`;
-  } else {
-    const a = parseFloat(valA) || 0;
-    const b = parseFloat(valB) || 0;
-    const c = parseFloat(valC) || 0;
-    const disc = b * b - 4 * a * c;
-    if (a === 0) {
-      resultText = 'Set a ≠ 0 for a quadratic equation';
-    } else if (disc < 0) {
-      resultText = `Δ = ${disc.toFixed(2)} (< 0 → No real roots)`;
-    } else {
-      const r1 = (-b + Math.sqrt(disc)) / (2 * a);
-      const r2 = (-b - Math.sqrt(disc)) / (2 * a);
-      resultText = `Δ = ${disc.toFixed(1)}  ⇒  x₁ = ${r1.toFixed(2)},  x₂ = ${r2.toFixed(2)}`;
-    }
-  }
+  const computed = evaluateMathExpression(formulaExpr, numericVars);
 
   return (
     <View
@@ -410,112 +590,33 @@ function MiniCalculatorWidget({ title, variant }: { title?: string; variant?: st
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Ionicons name="calculator" size={15} color={colors.brandGreen} />
           <Text style={[styles.boardTitle, { color: colors.text }]}>
-            {title ?? (isWave ? 'Wave Speed Calculator (v = f·λ)' : 'Quadratic Root Calculator')}
+            {widget.title ?? 'Interactive Formula Calculator'}
           </Text>
         </View>
       </View>
 
       <View style={styles.calcRow}>
-        <View style={styles.calcField}>
-          <Text style={[styles.calcLbl, { color: colors.textSecondary }]}>{isWave ? 'f (Hz)' : 'a'}</Text>
-          <TextInput
-            value={valA}
-            onChangeText={setValA}
-            keyboardType="numeric"
-            style={[styles.calcInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-          />
-        </View>
-        <View style={styles.calcField}>
-          <Text style={[styles.calcLbl, { color: colors.textSecondary }]}>{isWave ? 'λ (m)' : 'b'}</Text>
-          <TextInput
-            value={valB}
-            onChangeText={setValB}
-            keyboardType="numeric"
-            style={[styles.calcInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
-          />
-        </View>
-        {!isWave && (
-          <View style={styles.calcField}>
-            <Text style={[styles.calcLbl, { color: colors.textSecondary }]}>c</Text>
+        {variables.map((v) => (
+          <View key={v.name} style={styles.calcField}>
+            <Text style={[styles.calcLbl, { color: colors.textSecondary }]}>{v.label}</Text>
             <TextInput
-              value={valC}
-              onChangeText={setValC}
+              value={vals[v.name] ?? ''}
+              onChangeText={(txt) => setVals((prev) => ({ ...prev, [v.name]: txt }))}
               keyboardType="numeric"
-              style={[styles.calcInput, { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border }]}
+              style={[
+                styles.calcInput,
+                { backgroundColor: colors.surface, color: colors.text, borderColor: colors.border },
+              ]}
             />
           </View>
-        )}
+        ))}
       </View>
 
       <View style={[styles.calcResult, { backgroundColor: isDark ? 'rgba(34,197,94,0.18)' : '#DFF5E5' }]}>
-        <Text style={{ fontSize: 12.5, fontWeight: '800', color: colors.mintDark }}>{resultText}</Text>
+        <Text style={{ fontSize: 12.5, fontWeight: '800', color: colors.mintDark }}>
+          {widget.resultLabel ?? 'Result'}: {Number.isFinite(computed) ? computed.toFixed(2) : '—'}
+        </Text>
       </View>
-    </View>
-  );
-}
-
-/* 5. LABELED SCIENCE DIAGRAM (Bonding / Atom / Cell) */
-function ScienceDiagramWidget({
-  title,
-  caption,
-  variant,
-}: {
-  title?: string;
-  caption?: string;
-  variant?: string;
-}) {
-  const { colors, isDark } = useTheme();
-  const isBond = variant !== 'photosynthesis';
-  return (
-    <View
-      style={[
-        styles.boardWrap,
-        { backgroundColor: isDark ? '#1A2420' : '#FFFBF5', borderColor: colors.border },
-      ]}
-    >
-      <Text style={[styles.boardTitle, { color: colors.text }]}>
-        {title ?? (isBond ? 'Covalent Bonding Diagram (H₂O)' : 'Photosynthesis Energy Flow')}
-      </Text>
-      <Svg width={250} height={106} viewBox="0 0 250 106">
-        {isBond ? (
-          <>
-            <Circle cx={125} cy={52} r={24} fill="#DBEAFE" stroke="#2563EB" strokeWidth={2.2} />
-            <SvgText x={119} y={57} fontSize={14} fontWeight="bold" fill="#1D4ED8">
-              O
-            </SvgText>
-            <Circle cx={62} cy={66} r={16} fill="#DCFCE7" stroke="#16A34A" strokeWidth={2} />
-            <SvgText x={57} y={71} fontSize={12} fontWeight="bold" fill="#15803D">
-              H
-            </SvgText>
-            <Circle cx={188} cy={66} r={16} fill="#DCFCE7" stroke="#16A34A" strokeWidth={2} />
-            <SvgText x={183} y={71} fontSize={12} fontWeight="bold" fill="#15803D">
-              H
-            </SvgText>
-            <Line x1={78} y1={62} x2={101} y2={56} stroke="#7C3AED" strokeWidth={2.5} />
-            <Line x1={149} y1={56} x2={172} y2={62} stroke="#7C3AED" strokeWidth={2.5} />
-          </>
-        ) : (
-          <>
-            <Rect x={14} y={32} width={66} height={38} rx={10} fill="#FEF3C7" stroke="#F59E0B" strokeWidth={1.8} />
-            <SvgText x={24} y={55} fontSize={10} fontWeight="bold" fill="#B45309">
-              Sunlight
-            </SvgText>
-            <Line x1={80} y1={51} x2={100} y2={51} stroke="#16A34A" strokeWidth={2} />
-            <Rect x={100} y={24} width={60} height={54} rx={14} fill="#DCFCE7" stroke="#16A34A" strokeWidth={2} />
-            <SvgText x={109} y={55} fontSize={10} fontWeight="bold" fill="#15803D">
-              Leaf
-            </SvgText>
-            <Line x1={160} y1={51} x2={178} y2={51} stroke="#2563EB" strokeWidth={2} />
-            <Rect x={178} y={30} width={64} height={42} rx={10} fill="#DBEAFE" stroke="#2563EB" strokeWidth={1.8} />
-            <SvgText x={184} y={55} fontSize={9.5} fontWeight="bold" fill="#1D4ED8">
-              Glucose+O₂
-            </SvgText>
-          </>
-        )}
-      </Svg>
-      <Text style={[styles.caption, { color: colors.purple }]}>
-        {caption ?? (isBond ? 'Shared electron pairs stabilize H₂O' : '6CO₂ + 6H₂O + Light → C₆H₁₂O₆ + 6O₂')}
-      </Text>
     </View>
   );
 }
@@ -536,9 +637,39 @@ const styles = StyleSheet.create({
     gap: 6,
     flexWrap: 'wrap',
   },
-  boardTitle: { fontSize: 12.5, fontWeight: '800' },
+  boardTitle: { fontSize: 12.5, fontWeight: '800', flex: 1 },
   pillToggleRow: { flexDirection: 'row', gap: 5 },
   miniPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  eqInputRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  eqInput: { flex: 1, fontSize: 13, fontWeight: '700' },
+  barChartArea: {
+    width: '100%',
+    height: 120,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-around',
+    gap: 8,
+    paddingTop: 8,
+  },
+  barCol: { flex: 1, alignItems: 'center', gap: 4, height: '100%', justifyContent: 'flex-end' },
+  barTrack: {
+    width: '72%',
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(148,163,184,0.14)',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  barFill: { width: '100%', borderRadius: 8 },
   controlBar: {
     flexDirection: 'row',
     alignItems: 'center',

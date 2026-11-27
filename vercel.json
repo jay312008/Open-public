@@ -2,6 +2,11 @@
   "installCommand": "npm install --legacy-peer-deps",
   "buildCommand": "npx expo export --platform web",
   "outputDirectory": "dist",
+  "functions": {
+    "api/ai.ts": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     {
       "source": "/api/ai/:route*",

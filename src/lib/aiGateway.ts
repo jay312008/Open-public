@@ -1,4 +1,5 @@
 import { LiveLessonStep } from '@/types/models';
+import { ChatWidgetSpec } from '@/components/chat/ChatVisualWidget';
 
 function resolveGatewayUrl(): string {
   const configured = process.env.EXPO_PUBLIC_AI_GATEWAY_URL ?? '';
@@ -18,21 +19,45 @@ export const isLiveAIGatewayConfigured = Boolean(AI_GATEWAY_URL);
 export interface AIResponse<T> {
   data: T;
   source: 'live-gateway' | 'local-prototype';
+  error?: string;
 }
 
-async function postToGateway<T>(path: string, body: Record<string, unknown>): Promise<T | null> {
-  if (!isLiveAIGatewayConfigured) return null;
+async function postToGatewayDetailed<T>(
+  path: string,
+  body: Record<string, unknown>
+): Promise<{ data: T | null; error?: string }> {
+  if (!isLiveAIGatewayConfigured) return { data: null };
   try {
     const res = await fetch(`${AI_GATEWAY_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
+    const text = await res.text();
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+    if (!res.ok) {
+      const msg =
+        (parsed && typeof parsed.error === 'string' && parsed.error) ||
+        `HTTP ${res.status}: ${text.slice(0, 180)}`;
+      return { data: null, error: msg };
+    }
+    return { data: parsed as T };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err.message : 'Network error calling AI gateway',
+    };
   }
+}
+
+async function postToGateway<T>(path: string, body: Record<string, unknown>): Promise<T | null> {
+  const { data } = await postToGatewayDetailed<T>(path, body);
+  return data;
 }
 
 export interface MollyChatReply {
@@ -42,26 +67,34 @@ export interface MollyChatReply {
   steps?: { title: string; detail: string }[];
   example?: string;
   tip?: string;
-  widgets?: {
-    type: 'wave' | 'parabola' | 'geometry' | 'calculator' | 'science_diagram';
-    title?: string;
-    caption?: string;
-    variant?: string;
-  }[];
+  widgets?: ChatWidgetSpec[];
 }
 
 export async function askMollyAI(
   question: string,
   subject?: string
 ): Promise<AIResponse<MollyChatReply>> {
-  const remote = await postToGateway<MollyChatReply>('/chat', {
-    question,
-    subject,
-  });
-  if (remote && remote.text) {
-    return { data: remote, source: 'live-gateway' };
+  if (isLiveAIGatewayConfigured) {
+    const remote = await postToGatewayDetailed<MollyChatReply>('/chat', {
+      question,
+      subject,
+    });
+    if (remote.data && remote.data.text) {
+      return { data: remote.data, source: 'live-gateway' };
+    }
+    if (remote.error) {
+      return {
+        source: 'live-gateway',
+        error: remote.error,
+        data: {
+          heading: 'Live AI Gateway Error',
+          text: `Your Vercel server returned an error instead of a live AI answer:\n\n${remote.error}\n\nCheck Vercel → Project Settings → Environment Variables and make sure NVIDIA_API_KEY is saved and redeployed.`,
+        },
+      };
+    }
   }
 
+  // Offline / GitHub Pages prototype fallback (only used when no live gateway URL is present)
   const q = question.toLowerCase().trim();
   const isGreeting =
     /^(hi|hey|hello|yo|sup|hiya|good morning|good afternoon|good evening|how are you|what'?s up)[!.,?\s]*$/.test(
@@ -72,100 +105,107 @@ export async function askMollyAI(
       source: 'local-prototype',
       data: {
         heading: "Hey there! 👋 I'm Molly.",
-        text: 'What are we studying today? Try asking me to describe waves, explain quadratic equations, draw a right triangle, or explain chemical bonding!',
+        text: 'What are we studying today? Ask me to graph any equation (like y = 2x + 3 or y = sin(x)), describe waves, or explain a science topic!',
       },
     };
   }
+
+  // Dynamic equation extraction even in offline mode (e.g. "graph y = 2x + 3" or "plot sin(x)")
+  const eqMatch = question.match(/y\s*=\s*([0-9a-zA-Z+\-*/^().\s²³]+)/i);
+  if (eqMatch && eqMatch[1]) {
+    const expr = eqMatch[1].trim();
+    return {
+      source: 'local-prototype',
+      data: {
+        heading: `Graph of y = ${expr}`,
+        text: `Here is the live interactive plot of y = ${expr}. You can edit the equation directly on the graph board below to explore how it changes!`,
+        equation: `y = ${expr}`,
+        widgets: [
+          {
+            type: 'function_plot',
+            title: `Graph of y = ${expr}`,
+            expression: expr,
+            caption: 'Edit the equation above or tap Zoom +/- to inspect the curve',
+          },
+        ],
+      },
+    };
+  }
+
   if (q.includes('wave')) {
     return {
       source: 'local-prototype',
       data: {
         heading: "Let's break down Waves step by step!",
-        text: 'A wave is a disturbance that transfers energy from one place to another without permanently moving matter.',
+        text: 'A wave transfers energy from one place to another without permanently moving matter.',
         equation: 'v = f × λ   (Wave Speed = Frequency × Wavelength)',
         steps: [
-          { title: 'Transverse Waves', detail: 'Particles vibrate perpendicular (up & down) to wave travel — e.g., light and water ripples.' },
-          { title: 'Longitudinal Waves', detail: 'Particles vibrate parallel (back & forth) in compressions and rarefactions — e.g., sound waves.' },
-          { title: 'Key Measurements', detail: 'Amplitude (A) measures wave height; Wavelength (λ) is the distance between two crests.' },
+          { title: 'Transverse Waves', detail: 'Particles vibrate perpendicular to wave travel (light, water ripples).' },
+          { title: 'Longitudinal Waves', detail: 'Particles vibrate parallel in compressions & rarefactions (sound).' },
         ],
-        example: 'If a wave has frequency f = 50 Hz and wavelength λ = 2 m, its speed is v = 50 × 2 = 100 m/s.',
-        tip: 'Use the interactive ruler board & calculator below to test different frequencies and wave speeds!',
+        example: 'If f = 50 Hz and λ = 2 m, wave speed v = 50 × 2 = 100 m/s.',
         widgets: [
-          { type: 'wave', title: 'Interactive Wave & Ruler Board', variant: 'transverse', caption: 'Toggle Transverse / Longitudinal or adjust Frequency & Amplitude' },
-          { type: 'calculator', title: 'Wave Speed Calculator', variant: 'wave' },
+          { type: 'wave', title: 'Interactive Wave & Ruler Board', variant: 'transverse', frequency: 2, amplitude: 26 },
+          {
+            type: 'calculator',
+            title: 'Wave Speed Calculator (v = f · λ)',
+            formulaExpr: 'f * l',
+            resultLabel: 'Wave Speed (m/s)',
+            variables: [
+              { name: 'f', label: 'Freq f (Hz)', defaultValue: 50 },
+              { name: 'l', label: 'λ (m)', defaultValue: 2 },
+            ],
+          },
         ],
       },
     };
   }
+
   if (q.includes('quadratic') || q.includes('parabola')) {
     return {
       source: 'local-prototype',
       data: {
-        heading: "Sure! Let's break down Quadratic Equations step by step.",
+        heading: "Let's break down Quadratic Equations step by step.",
         text: 'A quadratic equation is a second-degree polynomial equation in standard form:',
         equation: 'ax² + bx + c = 0   where a ≠ 0',
         steps: [
           { title: 'Identify a, b and c.', detail: 'These are the coefficients in the equation.' },
-          { title: 'Find the solutions (roots).', detail: 'Factor or use x = (-b ± √(b² - 4ac)) / 2a.' },
-          { title: 'Interpret the graph.', detail: 'The roots are where the parabola crosses the x-axis.' },
+          { title: 'Find the roots.', detail: 'Factor or apply x = (-b ± √(b² - 4ac)) / 2a.' },
         ],
-        example: 'For x² - 5x + 6 = 0, factoring gives (x - 2)(x - 3) = 0, so x = 2 and x = 3.',
+        example: 'For y = x² - 4x + 3, the roots are x = 1 and x = 3, with vertex at (2, -1).',
         widgets: [
-          { type: 'parabola', title: 'Interactive Parabola Graph' },
-          { type: 'calculator', title: 'Quadratic Root Calculator' },
+          {
+            type: 'function_plot',
+            title: 'Graph of y = x² - 4x + 3',
+            expression: 'x^2 - 4*x + 3',
+            points: [
+              { x: 1, y: 0, label: '(1,0)' },
+              { x: 3, y: 0, label: '(3,0)' },
+              { x: 2, y: -1, label: 'Vertex (2,-1)' },
+            ],
+            caption: 'Edit the equation above to plot any other curve live!',
+          },
+          {
+            type: 'calculator',
+            title: 'Discriminant Calculator (Δ = b² - 4ac)',
+            formulaExpr: 'b^2 - 4*a*c',
+            resultLabel: 'Discriminant Δ',
+            variables: [
+              { name: 'a', label: 'a', defaultValue: 1 },
+              { name: 'b', label: 'b', defaultValue: -4 },
+              { name: 'c', label: 'c', defaultValue: 3 },
+            ],
+          },
         ],
       },
     };
   }
-  if (q.includes('triangle') || q.includes('pythagoras') || q.includes('circle') || q.includes('geometry')) {
-    const isCircle = q.includes('circle');
-    return {
-      source: 'local-prototype',
-      data: {
-        heading: isCircle ? "Let's explore Circle Geometry!" : "Let's explore the Pythagorean Theorem!",
-        text: isCircle
-          ? 'A circle is the set of all points at a fixed distance (radius r) from its center.'
-          : 'In any right-angled triangle, the square of the hypotenuse equals the sum of the squares of the other two sides.',
-        equation: isCircle ? 'Area = πr²   |   Circumference = 2πr' : 'a² + b² = c²',
-        steps: [
-          { title: 'Identify known lengths', detail: isCircle ? 'Measure the radius r from center to edge.' : 'Label the two perpendicular sides a and b.' },
-          { title: 'Apply the formula', detail: isCircle ? 'Substitute r into πr² or 2πr.' : 'Compute √(a² + b²) to find hypotenuse c.' },
-        ],
-        widgets: [{ type: 'geometry', variant: isCircle ? 'circle' : 'triangle' }],
-      },
-    };
-  }
-  if (q.includes('bond') || q.includes('chemistry') || q.includes('ionic') || q.includes('covalent')) {
-    return {
-      source: 'local-prototype',
-      data: {
-        heading: "Let's master Chemical Bonding!",
-        text: 'Atoms bond so they can achieve a full, stable outer electron shell.',
-        equation: 'Na → Na⁺ + e⁻   |   H — O — H (Covalent)',
-        steps: [
-          { title: 'Ionic Bonding', detail: 'A metal transfers electrons to a non-metal (e.g., NaCl).' },
-          { title: 'Covalent Bonding', detail: 'Two non-metals share electron pairs (e.g., H₂O).' },
-        ],
-        widgets: [{ type: 'science_diagram', variant: 'bonding' }],
-      },
-    };
-  }
-  if (q.includes('photosynthesis') || q.includes('biology') || q.includes('cell')) {
-    return {
-      source: 'local-prototype',
-      data: {
-        heading: "How Photosynthesis Works",
-        text: 'Plant chloroplasts use chlorophyll to capture sunlight and convert CO₂ and water into glucose and oxygen.',
-        equation: '6CO₂ + 6H₂O + light → C₆H₁₂O₆ + 6O₂',
-        widgets: [{ type: 'science_diagram', variant: 'photosynthesis' }],
-      },
-    };
-  }
+
   return {
     source: 'local-prototype',
     data: {
-      heading: `Let's look at "${question}"`,
-      text: `I'm ready to help! On your live Vercel deployment, NVIDIA AI answers any topic in structured steps and interactive boards. In offline preview, try asking about Waves, Quadratic Equations, Triangles/Circles, Chemical Bonding, or Photosynthesis!`,
+      heading: `Offline Preview Mode`,
+      text: `You are viewing the static preview (no live AI server attached). Open your Vercel .vercel.app deployment to get live NVIDIA AI answers and custom diagrams for "${question}"!`,
     },
   };
 }

@@ -46,38 +46,20 @@ function nowTime(): string {
 }
 
 function buildRichMessage(
-  question: string,
+  _question: string,
   reply: MollyChatReply,
   firstName: string
 ): Omit<ChatMsg, 'id' | 'role' | 'timestamp'> {
-  const q = `${question} ${reply.text}`.toLowerCase();
-  const widgets: ChatWidgetSpec[] = reply.widgets ? [...reply.widgets] : [];
-
-  // Ensure contextual visual widgets appear automatically if the model omitted them on visual topics
-  if (widgets.length === 0) {
-    if (q.includes('wave')) {
-      widgets.push(
-        { type: 'wave', title: 'Interactive Wave & Ruler Board', variant: 'transverse' },
-        { type: 'calculator', title: 'Wave Speed Calculator', variant: 'wave' }
-      );
-    } else if (q.includes('quadratic') || q.includes('parabola')) {
-      widgets.push(
-        { type: 'parabola', title: 'Interactive Parabola Graph' },
-        { type: 'calculator', title: 'Quadratic Root Calculator' }
-      );
-    } else if (q.includes('triangle') || q.includes('pythagoras') || q.includes('circle')) {
-      widgets.push({ type: 'geometry', variant: q.includes('circle') ? 'circle' : 'triangle' });
-    }
-  }
-
   return {
-    heading: reply.heading ?? (reply.steps ? `Sure, ${firstName}! Let's break it down step by step.` : undefined),
+    heading:
+      reply.heading ??
+      (reply.steps ? `Sure, ${firstName}! Let's break it down step by step.` : undefined),
     text: reply.text,
     equation: reply.equation,
     steps: reply.steps,
     example: reply.example,
     tip: reply.tip,
-    widgets: widgets.length > 0 ? widgets : undefined,
+    widgets: reply.widgets && reply.widgets.length > 0 ? reply.widgets : undefined,
   };
 }
 

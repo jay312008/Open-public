@@ -23,9 +23,9 @@ interface ChatMessage {
   content: string;
 }
 
-async function callNvidia(messages: ChatMessage[], maxTokens = 750): Promise<string> {
+async function callNvidia(messages: ChatMessage[], maxTokens = 850): Promise<string> {
   const apiKey = process.env.NVIDIA_API_KEY;
-  const model = process.env.NVIDIA_MODEL || 'meta/llama-3.1-70b-instruct';
+  const model = process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct';
 
   if (!apiKey) {
     throw new Error('NVIDIA_API_KEY is not set in Vercel Environment Variables.');
@@ -40,7 +40,7 @@ async function callNvidia(messages: ChatMessage[], maxTokens = 750): Promise<str
     body: JSON.stringify({
       model,
       messages,
-      temperature: 0.4,
+      temperature: 0.35,
       max_tokens: maxTokens,
     }),
   });
@@ -58,7 +58,7 @@ async function callNvidia(messages: ChatMessage[], maxTokens = 750): Promise<str
 
 function setCors(res: VercelResponseLike) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
@@ -67,6 +67,15 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
+    return;
+  }
+
+  if (req.method === 'GET') {
+    res.status(200).json({
+      ok: true,
+      hasApiKey: Boolean(process.env.NVIDIA_API_KEY),
+      model: process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct',
+    });
     return;
   }
 
@@ -90,14 +99,14 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           {
             role: 'system',
             content:
-              'You are Molly, a warm, orderly AI tutor in LearnyMol. Return ONLY raw valid JSON (no markdown fences) with schema: { "heading": string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: [{ "type": "wave"|"parabola"|"geometry"|"calculator"|"science_diagram", "title"?: string, "caption"?: string, "variant"?: string }] }. Keep text concise and orderly, never scattered. Include 1-2 relevant widgets when discussing waves (type:"wave" + type:"calculator", variant:"wave"), quadratics/graphs (type:"parabola" + type:"calculator"), geometry/triangles/circles (type:"geometry"), or bonding/photosynthesis (type:"science_diagram"). For casual greetings like "Hi", keep steps and widgets omitted.',
+              'You are Molly, a warm, orderly AI tutor in LearnyMol. Return ONLY raw valid JSON (no markdown fences) with schema: { "heading": string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Keep explanations clean and orderly. Generate DYNAMIC widgets tailored strictly to the exact question (never reuse an unrelated graph!): Widget types: (1) { "type":"function_plot", "title":string, "expression":string (valid math in x like "2*x+3", "sin(x)", "x^3-3*x", "x^2-4*x+3"), "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } (2) { "type":"canvas_diagram", "title":string, "primitives":[{"kind":"line"|"circle"|"rect"|"path"|"text","x1"?:n,"y1"?:n,"x2"?:n,"y2"?:n,"cx"?:n,"cy"?:n,"r"?:n,"x"?:n,"y"?:n,"w"?:n,"h"?:n,"d"?:s,"content"?:s,"color"?:s,"fill"?:s}], "caption":string } on a 264x150 canvas (3) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (4) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (5) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }. Omit widgets for simple greetings.',
           },
           {
             role: 'user',
             content: subject !== 'general studies' ? `[Subject: ${subject}] ${question}` : question,
           },
         ],
-        1050
+        1100
       );
 
       try {
