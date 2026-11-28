@@ -71,8 +71,8 @@ export default function CommunityScreen() {
     [posts, activePostIdForComments]
   );
 
-  const hairline = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.09)';
-  const feedBg = isDark ? 'rgba(17,24,21,0.92)' : 'rgba(255,255,255,0.92)';
+  const hairline = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(37,29,58,0.09)';
+  const feedBg = 'transparent';
 
   const pickImage = async () => {
     try {
@@ -196,7 +196,7 @@ export default function CommunityScreen() {
       <Text style={[styles.tweetBody, { color: colors.text }]}>
         {parts.map((part, i) =>
           part.startsWith('#') || part.startsWith('@') ? (
-            <Text key={i} style={{ color: '#1D9BF0', fontWeight: '700' }}>
+            <Text key={i} style={{ color: '#FF6B4A', fontWeight: '700' }}>
               {part}
             </Text>
           ) : (
@@ -283,7 +283,7 @@ export default function CommunityScreen() {
                 >
                   {tab}
                 </Text>
-                {active && <View style={[styles.tabUnderline, { backgroundColor: '#1D9BF0' }]} />}
+                {active && <View style={[styles.tabUnderline, { backgroundColor: '#FF6B4A' }]} />}
               </AnimatedPressable>
             );
           })}
@@ -361,7 +361,7 @@ export default function CommunityScreen() {
                             <Text style={[styles.authorName, { color: colors.text }]} numberOfLines={1}>
                               {post.authorName}
                             </Text>
-                            <Ionicons name="checkmark-circle" size={14} color="#1D9BF0" />
+                            <Ionicons name="checkmark-circle" size={14} color="#FF6B4A" />
                             <Text style={[styles.authorMeta, { color: colors.textMuted }]} numberOfLines={1}>
                               @{post.authorUsername} · {post.createdAt}
                             </Text>
@@ -381,10 +381,10 @@ export default function CommunityScreen() {
                             <View
                               style={[
                                 styles.topicChip,
-                                { backgroundColor: isDark ? 'rgba(29,155,240,0.16)' : '#EFF6FF' },
+                                { backgroundColor: isDark ? 'rgba(255,107,74,0.16)' : '#FFEDE8' },
                               ]}
                             >
-                              <Text style={{ color: '#1D9BF0', fontSize: 11, fontWeight: '700' }}>
+                              <Text style={{ color: '#FF6B4A', fontSize: 11, fontWeight: '700' }}>
                                 {post.subjectTag}
                               </Text>
                             </View>
@@ -464,7 +464,7 @@ export default function CommunityScreen() {
                             <Ionicons
                               name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
                               size={17}
-                              color={isBookmarked ? '#1D9BF0' : colors.textMuted}
+                              color={isBookmarked ? '#FF6B4A' : colors.textMuted}
                             />
                           </AnimatedPressable>
 
@@ -488,7 +488,7 @@ export default function CommunityScreen() {
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <AnimatedPressable
                   onPress={() => setShowCreateGroup((v) => !v)}
-                  style={[styles.groupPrimaryBtn, { backgroundColor: '#1D9BF0', flex: 1 }]}
+                  style={[styles.groupPrimaryBtn, { backgroundColor: '#FF6B4A', flex: 1 }]}
                 >
                   <Ionicons name={showCreateGroup ? 'close' : 'add'} size={18} color="#FFFFFF" />
                   <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 }}>
@@ -535,7 +535,7 @@ export default function CommunityScreen() {
                       onPress={() => setGrpPrivate(true)}
                       style={[
                         styles.visBtn,
-                        { backgroundColor: grpPrivate ? '#1D9BF0' : colors.surfaceMuted },
+                        { backgroundColor: grpPrivate ? '#FF6B4A' : colors.surfaceMuted },
                       ]}
                     >
                       <Ionicons name="lock-closed" size={14} color={grpPrivate ? '#FFFFFF' : colors.text} />
@@ -547,7 +547,7 @@ export default function CommunityScreen() {
                       onPress={() => setGrpPrivate(false)}
                       style={[
                         styles.visBtn,
-                        { backgroundColor: !grpPrivate ? '#1D9BF0' : colors.surfaceMuted },
+                        { backgroundColor: !grpPrivate ? '#FF6B4A' : colors.surfaceMuted },
                       ]}
                     >
                       <Ionicons name="globe-outline" size={14} color={!grpPrivate ? '#FFFFFF' : colors.text} />
@@ -582,8 +582,8 @@ export default function CommunityScreen() {
                   onPress={() => router.push(`/community/group/${g.id}` as never)}
                   style={[styles.groupRow, { borderColor: hairline, backgroundColor: colors.surface }]}
                 >
-                  <View style={[styles.groupIcon, { backgroundColor: isDark ? 'rgba(29,155,240,0.18)' : '#EFF6FF' }]}>
-                    <Ionicons name={g.isPrivate ? 'lock-closed' : 'people'} size={20} color="#1D9BF0" />
+                  <View style={[styles.groupIcon, { backgroundColor: isDark ? 'rgba(255,107,74,0.18)' : '#FFEDE8' }]}>
+                    <Ionicons name={g.isPrivate ? 'lock-closed' : 'people'} size={20} color="#FF6B4A" />
                   </View>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>{g.name}</Text>
@@ -639,7 +639,7 @@ export default function CommunityScreen() {
           transparent={false}
           onRequestClose={() => setComposerModalOpen(false)}
         >
-          <SafeAreaView style={[styles.modalSafe, { backgroundColor: isDark ? '#111815' : '#FFFFFF' }]}>
+          <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
             <KeyboardAvoidingView
               style={{ flex: 1 }}
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -654,7 +654,7 @@ export default function CommunityScreen() {
                     styles.publishBtn,
                     {
                       backgroundColor:
-                        composerText.trim() || composerImage ? '#1D9BF0' : 'rgba(29,155,240,0.45)',
+                        composerText.trim() || composerImage ? '#FF6B4A' : 'rgba(255,107,74,0.45)',
                     },
                   ]}
                 >
@@ -677,7 +677,7 @@ export default function CommunityScreen() {
                               styles.tagOption,
                               {
                                 backgroundColor: sel
-                                  ? '#1D9BF0'
+                                  ? '#FF6B4A'
                                   : isDark
                                     ? 'rgba(255,255,255,0.08)'
                                     : '#F1F5F9',
@@ -725,8 +725,8 @@ export default function CommunityScreen() {
 
               <View style={[styles.composerFooter, { borderTopColor: hairline }]}>
                 <AnimatedPressable onPress={pickImage} style={styles.footerIconBtn}>
-                  <Ionicons name="image-outline" size={22} color="#1D9BF0" />
-                  <Text style={{ color: '#1D9BF0', fontWeight: '700', fontSize: 13 }}>Add Photo</Text>
+                  <Ionicons name="image-outline" size={22} color="#FF6B4A" />
+                  <Text style={{ color: '#FF6B4A', fontWeight: '700', fontSize: 13 }}>Add Photo</Text>
                 </AnimatedPressable>
                 <Text
                   style={{
@@ -749,7 +749,7 @@ export default function CommunityScreen() {
           transparent={false}
           onRequestClose={() => setActivePostIdForComments(null)}
         >
-          <SafeAreaView style={[styles.modalSafe, { backgroundColor: isDark ? '#111815' : '#FFFFFF' }]}>
+          <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
             <KeyboardAvoidingView
               style={{ flex: 1 }}
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -775,7 +775,7 @@ export default function CommunityScreen() {
                           <Text style={[styles.authorName, { color: colors.text }]}>
                             {activePostForComments.authorName}
                           </Text>
-                          <Ionicons name="checkmark-circle" size={14} color="#1D9BF0" />
+                          <Ionicons name="checkmark-circle" size={14} color="#FF6B4A" />
                         </View>
                         <Text style={{ color: colors.textMuted, fontSize: 13 }}>
                           @{activePostForComments.authorUsername} · {activePostForComments.createdAt}
@@ -834,7 +834,7 @@ export default function CommunityScreen() {
                   onPress={handleSendReply}
                   style={[
                     styles.publishBtn,
-                    { backgroundColor: commentDraft.trim() ? '#1D9BF0' : 'rgba(29,155,240,0.45)' },
+                    { backgroundColor: commentDraft.trim() ? '#FF6B4A' : 'rgba(255,107,74,0.45)' },
                   ]}
                 >
                   <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 }}>Reply</Text>
@@ -913,7 +913,7 @@ const styles = StyleSheet.create({
   },
   inlinePromptPlaceholder: { flex: 1, fontSize: 15, fontWeight: '500' },
   inlinePromptBtn: {
-    backgroundColor: '#1D9BF0',
+    backgroundColor: '#FF6B4A',
     paddingHorizontal: 16,
     paddingVertical: 7,
     borderRadius: 999,
@@ -980,10 +980,10 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#1D9BF0',
+    backgroundColor: '#FF6B4A',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#1D9BF0',
+    shadowColor: '#FF6B4A',
     shadowOpacity: 0.38,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
