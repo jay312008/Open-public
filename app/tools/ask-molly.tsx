@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -12,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import Svg, { Circle, Line, Path, Polygon, Text as SvgText } from 'react-native-svg';
 import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
@@ -33,6 +35,7 @@ interface ChatMsg {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  imageUri?: string;
   heading?: string;
   equation?: string;
   steps?: RichStep[];
@@ -129,25 +132,52 @@ export default function AskMollyScreen() {
     setInput('');
   };
 
+  const [attachedImage, setAttachedImage] = useState<{ uri: string; dataUrl?: string } | null>(null);
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
+
+  const handleAttachImage = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        base64: true,
+        quality: 0.65,
+      });
+      if (!res.canceled && res.assets[0]) {
+        const asset = res.assets[0];
+        const mime = asset.mimeType || 'image/jpeg';
+        let dataUrl = asset.base64 ? `data:${mime};base64,${asset.base64}` : undefined;
+        // On web, if asset.uri is already a data URL, use it directly
+        if (!dataUrl && asset.uri.startsWith('data:image/')) {
+          dataUrl = asset.uri;
+        }
+        setAttachedImage({ uri: asset.uri, dataUrl });
+      }
+    } catch {
+      Alert.alert('Upload Image', 'Could not open your photo library on this device.');
+    }
+  };
 
   const sendMessage = async (textToSend: string) => {
     const clean = textToSend.trim();
-    if (!clean || loading) return;
+    const pendingImg = attachedImage;
+    if ((!clean && !pendingImg) || loading) return;
 
+    const promptToShow = clean || 'Explain what is in this image step by step';
     const userMsg: ChatMsg = {
       id: `u-${Date.now()}`,
       role: 'user',
-      text: clean,
+      text: promptToShow,
+      imageUri: pendingImg?.uri,
       timestamp: nowTime(),
     };
     const nextList = [...messages, userMsg];
     setMessages(nextList);
     setInput('');
+    setAttachedImage(null);
     setLoading(true);
 
-    logStudyActivity(`Asked ${companion.name}: ${clean.slice(0, 60)}`);
-    consumeCredits(1, `Chat with ${companion.name}: ${clean.slice(0, 32)}`, 'ai-chat');
+    logStudyActivity(`Asked ${companion.name}: ${promptToShow.slice(0, 60)}`);
+    consumeCredits(1, `Chat with ${companion.name}: ${promptToShow.slice(0, 32)}`, 'ai-chat');
     const memContext = learningMemory.shareContextWithAI
       ? `Education level: ${profile.educationLevel}.${
           learningMemory.weakTopics.length > 0
@@ -164,7 +194,15 @@ export default function AskMollyScreen() {
         content: [m.heading, m.text, m.equation].filter(Boolean).join('\n'),
       }));
 
-    const res = await askMollyAI(clean, undefined, memContext, historyPayload, companion.name);
+    const res = await askMollyAI(
+      promptToShow,
+      undefined,
+      memContext,
+      historyPayload,
+      companion.name,
+      profile.educationLevel,
+      pendingImg?.dataUrl
+    );
     const enriched = buildRichMessage(clean, res.data, firstName);
     const botMsg: ChatMsg = {
       id: `a-${Date.now()}`,
@@ -315,6 +353,13 @@ export default function AskMollyScreen() {
                         { backgroundColor: isDark ? '#254434' : '#E3F6D6' },
                       ]}
                     >
+                      {msg.imageUri && (
+                        <Image
+                          source={{ uri: msg.imageUri }}
+                          style={{ width: 190, height: 130, borderRadius: 12, marginBottom: 4 }}
+                          resizeMode="cover"
+                        />
+                      )}
                       <Text style={[styles.userText, { color: colors.text }]}>{msg.text}</Text>
                       <View style={styles.timeRowRight}>
                         <Text style={[styles.timeText, { color: colors.textMuted }]}>
@@ -482,6 +527,45 @@ export default function AskMollyScreen() {
             </ScrollView>
           </View>
 
+          {/* Attached Image Preview Bar */}
+          {attachedImage && (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                marginHorizontal: 14,
+                marginBottom: 6,
+                padding: 8,
+                borderRadius: 16,
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <Image
+                source={{ uri: attachedImage.uri }}
+                style={{ width: 46, height: 46, borderRadius: 10 }}
+                resizeMode="cover"
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 13, fontWeight: '800' }}>
+                  Image attached
+                </Text>
+                <Text style={{ color: colors.textMuted, fontSize: 11.5 }}>
+                  Ask a question or tap send for {companion.name} to explain it
+                </Text>
+              </View>
+              <AnimatedPressable
+                onPress={() => setAttachedImage(null)}
+                style={{ padding: 6 }}
+                accessibilityLabel="Remove attached image"
+              >
+                <Ionicons name="close-circle" size={20} color={colors.coral} />
+              </AnimatedPressable>
+            </View>
+          )}
+
           {/* Rounded Floating Composer Bar */}
           <View style={styles.composerOuter}>
             <View
@@ -491,9 +575,9 @@ export default function AskMollyScreen() {
               ]}
             >
               <AnimatedPressable
-                onPress={() => Alert.alert('Attach Study Material', 'Use Image Analyzer or Book Analyzer from Home to scan photos and PDFs.')}
+                onPress={handleAttachImage}
                 style={[styles.circleToolBtn, { backgroundColor: colors.surfaceMint }]}
-                accessibilityLabel="Attach"
+                accessibilityLabel="Attach image"
               >
                 <Ionicons name="attach" size={19} color={colors.mintDark} />
               </AnimatedPressable>

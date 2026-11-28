@@ -174,6 +174,43 @@ export const EDUCATIONAL_ASSETS: Record<string, EducationalAsset> = {
       { kind: 'text', x: 170, y: 206, content: 'Carbon-12: Nucleus (6p⁺, 6n⁰) + Electron Shells [2, 4]', color: '#334155', fontSize: 10 },
     ],
   },
+
+  logic_gates: {
+    id: 'logic_gates',
+    name: 'Basic Logic Gate Symbols (AND, OR, NOT)',
+    subject: 'Physics',
+    topic: 'Digital Electronics & Logic Gates',
+    description: 'Standard IEEE logic gate symbols for AND (Y = A·B), OR (Y = A+B), and NOT (Y = Ā) with inputs and outputs.',
+    license: 'Original LearnyMol Educational Vector (CC0)',
+    animationKind: 'none',
+    primitives: [
+      // --- 1. AND GATE (Left) ---
+      { kind: 'line', x1: 14, y1: 68, x2: 38, y2: 68, color: '#2563EB', strokeWidth: 2.2 },
+      { kind: 'line', x1: 14, y1: 96, x2: 38, y2: 96, color: '#2563EB', strokeWidth: 2.2 },
+      { kind: 'path', d: 'M 38 54 L 62 54 A 28 28 0 0 1 62 110 L 38 110 Z', color: '#2563EB', fill: 'rgba(37,99,235,0.14)', strokeWidth: 2.4 },
+      { kind: 'arrow', x1: 90, y1: 82, x2: 112, y2: 82, color: '#2563EB', strokeWidth: 2.2 },
+      { kind: 'text', x: 64, y: 40, content: 'AND Gate', color: '#1D4ED8', fontSize: 11 },
+      { kind: 'text', x: 64, y: 132, content: 'Y = A · B', color: '#1E40AF', fontSize: 10 },
+
+      // --- 2. OR GATE (Center) ---
+      { kind: 'line', x1: 124, y1: 68, x2: 150, y2: 68, color: '#7C3AED', strokeWidth: 2.2 },
+      { kind: 'line', x1: 124, y1: 96, x2: 150, y2: 96, color: '#7C3AED', strokeWidth: 2.2 },
+      { kind: 'path', d: 'M 144 54 Q 160 82 144 110 Q 184 110 202 82 Q 184 54 144 54 Z', color: '#7C3AED', fill: 'rgba(124,92,250,0.14)', strokeWidth: 2.4 },
+      { kind: 'arrow', x1: 202, y1: 82, x2: 224, y2: 82, color: '#7C3AED', strokeWidth: 2.2 },
+      { kind: 'text', x: 174, y: 40, content: 'OR Gate', color: '#6D28D9', fontSize: 11 },
+      { kind: 'text', x: 174, y: 132, content: 'Y = A + B', color: '#5B21B6', fontSize: 10 },
+
+      // --- 3. NOT GATE (Right) ---
+      { kind: 'line', x1: 234, y1: 82, x2: 256, y2: 82, color: '#EA580C', strokeWidth: 2.2 },
+      { kind: 'polygon', points: [{ x: 256, y: 58 }, { x: 256, y: 106 }, { x: 294, y: 82 }], color: '#EA580C', fill: 'rgba(234,88,12,0.14)', strokeWidth: 2.4 },
+      { kind: 'circle', cx: 300, cy: 82, r: 5.5, color: '#EA580C', fill: '#FFFFFF', strokeWidth: 2.2 },
+      { kind: 'arrow', x1: 306, y1: 82, x2: 328, y2: 82, color: '#EA580C', strokeWidth: 2.2 },
+      { kind: 'text', x: 282, y: 40, content: 'NOT Gate', color: '#C2410C', fontSize: 11 },
+      { kind: 'text', x: 282, y: 132, content: 'Y = NOT A', color: '#9A3412', fontSize: 10 },
+
+      { kind: 'text', x: 170, y: 186, content: 'Inputs: A, B (0 = OFF, 1 = ON)  →  Output: Y', color: '#334155', fontSize: 10.5 },
+    ],
+  },
 };
 
 export function buildDeterministicRightTriangle(heightVal: number, baseVal: number, unit = 'cm'): {

@@ -18,18 +18,23 @@ interface VercelResponseLike {
   end: (body?: string) => void;
 }
 
+type MessageContent =
+  | string
+  | ({ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } })[];
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: MessageContent;
 }
 
 async function callNvidia(
   messages: ChatMessage[],
   maxTokens = 850,
-  jsonMode = false
+  jsonMode = false,
+  modelOverride?: string
 ): Promise<string> {
   const apiKey = process.env.NVIDIA_API_KEY;
-  const model = process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-bolt-e4b';
+  const model = modelOverride || process.env.NVIDIA_MODEL || 'nvidia/nemotron-3.5-bolt-e4b';
 
   if (!apiKey) {
     throw new Error('NVIDIA_API_KEY is not set in Vercel Environment Variables.');
@@ -119,6 +124,10 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       const question = String(body.question ?? '').trim();
       const subject = body.subject ? String(body.subject) : 'general studies';
       const companionName = body.companionName ? String(body.companionName).slice(0, 30) : 'Molly';
+      const educationLevel = body.educationLevel ? String(body.educationLevel).slice(0, 40) : 'O-Level / Secondary';
+      const imageBase64 = typeof body.imageBase64 === 'string' && body.imageBase64.startsWith('data:image/')
+        ? body.imageBase64
+        : undefined;
       const learningContext = body.learningContext ? String(body.learningContext).slice(0, 800) : '';
       const rawHistory = Array.isArray(body.history) ? body.history : [];
       const historyMsgs: ChatMessage[] = rawHistory
@@ -130,29 +139,67 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         }));
 
       const userPrompt = [
+        `[Student Level: ${educationLevel}]`,
         subject !== 'general studies' ? `[Subject: ${subject}]` : '',
         learningContext ? `[Student Learning Context: ${learningContext}]` : '',
-        question,
+        question || (imageBase64 ? 'Please read, describe, and explain what is in this uploaded image step by step.' : ''),
       ]
         .filter(Boolean)
         .join('\n');
 
-      const reply = await callNvidia(
-        [
-          {
-            role: 'system',
-            content:
-              `You are ${companionName}, a warm, attentive, 1-on-1 human-like tutor in LearnyMol. If asked your name, always say your name is ${companionName}. RULES: (1) ALWAYS listen carefully to the student's exact message and the conversation history — NEVER switch to an unrelated topic! (2) Talk naturally like a caring teacher sitting beside the student: clear, simple English, never robotic or overly dense. (3) For math/science equations, put each step on its own clean line so nothing is squeezed together. (4) NEVER use LaTeX backslashes (no \\rightarrow, \\frac, \\neq, \\sqrt, no $ signs) — use plain Unicode symbols (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). (5) Choose the EXACT right visual widget! Return ONLY raw valid JSON with schema: { "heading"?: string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Widget types: (1) { "type":"function_plot", "title":string, "expression":string, "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } — ONLY use for pure y=f(x) functions of single variable x (like "x^2 - 4" or "sin(x)"). NEVER put "=" or variables like theta1/n1/u/v in function_plot! (2) { "type":"table", "title":string, "headers":string[], "rows":string[][], "caption":string } — use for ANY spreadsheet/comparison/truth/values table! (3) { "type":"periodic_table", "title":string, "caption":string } — use whenever the student asks for the Periodic Table! (4) { "type":"molecule", "title":string, "atoms"?:[{"id":string,"symbol":string,"x":number,"y":number,"charge"?:string}], "bonds"?:[{"from":string,"to":string,"order"?:1|2|3}], "shells"?:[{"symbol":string,"charge"?:string,"rings":number[],"style":"dot"|"cross"}], "caption":string } on a 320x190 canvas — use for chemical bonding dot-and-cross shells or organic structures! (5) { "type":"canvas_diagram", "title":string, "primitives":[...], "caption":string } on a 340x220 scientific blueprint canvas — USE THIS for ALL physics/optics/echo/sound/geometry/triangles/ladder problems/forces/circuits/potential difference/prisms/lenses/biology diagrams! Supported primitives: "arrow" (x1,y1,x2,y2,color,dashed?), "line" (x1,y1,x2,y2,color,dashed?), "polygon" (points:[{x,y}],color,fill?), "arc" (cx,cy,r,startAngle,endAngle,label?,color), "right_angle" (x,y,size?,dx?,dy?,color), "circle" (cx,cy,r,color,fill?), "rect" (x,y,w,h,color,fill?), "path" (d,color,fill?,dashed?), "text" (x,y,content,color,fontSize?). (6) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (7) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (8) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }.`,
-          },
-          ...historyMsgs,
+      const systemPrompt =
+        `You are ${companionName}, an expert human-like tutor in LearnyMol teaching a ${educationLevel} student. CRITICAL RULES: (1) NEVER introduce yourself or say "Hello! I'm ${companionName}" — jump straight into teaching like a real teacher. ONLY state your name (${companionName}) if the student explicitly asks "what is your name?". (2) ALWAYS give thorough, clear, well-structured, easy-to-understand explanations tailored to ${educationLevel} — NEVER give short, rushed 2-sentence replies! Break concepts into clear numbered steps, simple everyday analogies, and concrete examples. If the student asks for a simpler explanation, explain it even more simply. (3) YOU HAVE A LIVE INTERACTIVE SVG CANVAS ("widgets"). NEVER EVER say "I cannot draw a picture" or apologize for not showing a diagram/symbol! Whenever a diagram, symbol, table, or graph helps — OR when the student asks for one — you MUST populate "widgets". (4) Put every equation step on its own clean line. NEVER use LaTeX backslashes (no \\frac, \\rightarrow, \\neq, no $ signs) or markdown *asterisks* — use plain Unicode (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). Return ONLY raw valid JSON: { "heading"?: string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Widget types: (1) "canvas_diagram": { "type":"canvas_diagram", "title":string, "primitives":[...], "caption":string } on a 340x220 canvas — primitives: "arrow"(x1,y1,x2,y2,color,dashed?), "line"(x1,y1,x2,y2,color,dashed?), "polygon"(points:[{x,y}],color,fill?), "arc"(cx,cy,r,startAngle,endAngle,label?,color), "right_angle"(x,y,size?,dx?,dy?,color), "circle"(cx,cy,r,color,fill?), "rect"(x,y,w,h,color,fill?), "path"(d,color,fill?,dashed?), "text"(x,y,content,color,fontSize?). (2) "table": { "type":"table", "title":string, "headers":string[], "rows":string[][], "caption":string } (3) "function_plot": { "type":"function_plot", "title":string, "expression":string (ONLY single variable x, NEVER "="), "xMin"?:n, "xMax"?:n, "caption":string } (4) "molecule" / "periodic_table" / "wave" / "chart" / "model_3d" / "code_sim".`;
+
+      let reply = '';
+      if (imageBase64) {
+        const visionModels = [
+          'meta/llama-3.2-11b-vision-instruct',
+          'nvidia/neva-22b',
+          'microsoft/phi-3.5-vision-instruct',
+        ];
+        const visionMsgs: ChatMessage[] = [
+          { role: 'system', content: systemPrompt },
           {
             role: 'user',
-            content: userPrompt,
+            content: [
+              { type: 'text', text: userPrompt },
+              { type: 'image_url', image_url: { url: imageBase64 } },
+            ],
           },
-        ],
-        1600,
-        true
-      );
+        ];
+        for (const vm of visionModels) {
+          try {
+            reply = await callNvidia(visionMsgs, 2000, false, vm);
+            if (reply) break;
+          } catch {
+            // try next vision model
+          }
+        }
+        if (!reply) {
+          reply = await callNvidia(
+            [
+              { role: 'system', content: systemPrompt },
+              ...historyMsgs,
+              {
+                role: 'user',
+                content: `${userPrompt}\n(Note: The student attached an image, but the vision model is temporarily unavailable. Ask them kindly to type or summarize the key question from the image if needed while helping with what they wrote.)`,
+              },
+            ],
+            1800,
+            true
+          );
+        }
+      } else {
+        reply = await callNvidia(
+          [
+            { role: 'system', content: systemPrompt },
+            ...historyMsgs,
+            { role: 'user', content: userPrompt },
+          ],
+          2400,
+          true
+        );
+      }
 
       const cleanLatex = (s: unknown): unknown => {
         if (typeof s === 'string') {
@@ -680,6 +727,86 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
               ...currentWidgets,
             ];
           }
+        }
+
+        // H. Logic Gates (AND, OR, NOT Symbols + Truth Table) — checks recentContext so follow-ups like "can you show a diagram" or "where is the symbol" work immediately!
+        const finalWidgetsNow = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        if (
+          /\b(logic\s+gate|and\s+gate|or\s+gate|not\s+gate|nand|nor|xor|truth\s+table)\b/i.test(recentContext) &&
+          !finalWidgetsNow.some((w: unknown) => (w as { assetId?: string })?.assetId === 'logic_gates')
+        ) {
+          parsed.widgets = [
+            { type: 'asset_ref', assetId: 'logic_gates' },
+            {
+              type: 'table',
+              title: 'Basic Logic Gates Truth Table',
+              headers: ['Input A', 'Input B', 'AND (A·B)', 'OR (A+B)', 'NOT A'],
+              rows: [
+                ['0', '0', '0', '0', '1'],
+                ['0', '1', '0', '1', '1'],
+                ['1', '0', '0', '1', '0'],
+                ['1', '1', '1', '1', '0'],
+              ],
+              caption: '0 = False / OFF · 1 = True / ON',
+            },
+            ...finalWidgetsNow.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
+          ];
+        }
+
+        // I. UNIVERSAL TWO-PASS GUARANTEED VISUAL GENERATOR:
+        // If the student explicitly asked for a diagram/symbol/visual/graph (or asked "where is the symbol/diagram")
+        // and widgets is STILL empty, run a fast dedicated 2nd AI pass solely to draw a crisp 340x220 canvas_diagram!
+        const explicitlyNeedsVisual =
+          asksVisual ||
+          /\b(symbol|where\s+is\s+the\s+(diagram|symbol|graph|visual|picture|drawing))\b/i.test(question);
+        const afterAllWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        if (explicitlyNeedsVisual && afterAllWidgets.length === 0) {
+          try {
+            const drawReply = await callNvidia(
+              [
+                {
+                  role: 'system',
+                  content:
+                    'You are a precision SVG scientific illustrator. Return ONLY raw valid JSON for ONE clean 340x220 diagram: { "type": "canvas_diagram", "title": string, "primitives": [...], "caption": string }. Supported primitives: {"kind":"arrow","x1":n,"y1":n,"x2":n,"y2":n,"color":hex}, {"kind":"line","x1":n,"y1":n,"x2":n,"y2":n,"color":hex,"dashed"?:bool}, {"kind":"rect","x":n,"y":n,"w":n,"h":n,"color":hex,"fill":rgba}, {"kind":"circle","cx":n,"cy":n,"r":n,"color":hex,"fill":rgba}, {"kind":"polygon","points":[{"x":n,"y":n},...],"color":hex,"fill":rgba}, {"kind":"path","d":svgPath,"color":hex,"fill":rgbaOrNone}, {"kind":"text","x":n,"y":n,"content":string,"color":hex,"fontSize":10}. Include at least 6 well-spaced, non-overlapping primitives.',
+                },
+                {
+                  role: 'user',
+                  content: `Draw a clear, labeled educational diagram for this student discussion:\nTopic context: ${recentContext.slice(0, 600)}\nStudent request: ${question}`,
+                },
+              ],
+              1100,
+              true
+            );
+            const dc = drawReply.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+            const fb = dc.indexOf('{');
+            const lb = dc.lastIndexOf('}');
+            const dObj = JSON.parse(fb >= 0 && lb > fb ? dc.slice(fb, lb + 1) : dc) as {
+              type?: string;
+              title?: string;
+              primitives?: unknown[];
+              caption?: string;
+            };
+            if (Array.isArray(dObj.primitives) && dObj.primitives.length >= 2) {
+              parsed.widgets = [
+                {
+                  type: 'canvas_diagram',
+                  title: dObj.title || String(parsed.heading || 'Visual Diagram'),
+                  primitives: dObj.primitives,
+                  caption: dObj.caption || 'Generated interactive diagram.',
+                },
+              ];
+            }
+          } catch {
+            // non-fatal; written explanation still returned
+          }
+        }
+
+        // Clean any leftover "I can't draw" apology sentence if a real visual widget is attached
+        if (Array.isArray(parsed.widgets) && parsed.widgets.length > 0 && typeof parsed.text === 'string') {
+          parsed.text = parsed.text
+            .replace(/Since I can'?t draw[^.!?\n]*[.!?]\s*/gi, '')
+            .replace(/I cannot draw[^.!?\n]*[.!?]\s*/gi, '')
+            .trim();
         }
       }
 
