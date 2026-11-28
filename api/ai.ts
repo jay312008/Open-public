@@ -327,24 +327,33 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     if (route === 'quiz-generator') {
       const subject = String(body.subject ?? 'Mathematics');
       const topic = String(body.topic ?? 'Quadratic Equations');
-      const count = Math.min(8, Math.max(2, Number(body.count ?? 4)));
+      const count = Math.min(20, Math.max(1, Number(body.count ?? 5)));
       const difficulty = String(body.difficulty ?? 'Medium');
+      const tokenBudget = Math.min(3600, count * 180 + 400);
       const reply = await callNvidia(
         [
           {
             role: 'system',
             content:
-              'Return ONLY a raw JSON array (no markdown fences) of multiple-choice quiz objects: { "id": string, "prompt": string, "options": [string, string, string, string], "correctIndex": 0|1|2|3, "explanation": string }.',
+              'You are a Cameroon GCE & University exam writer. Return ONLY raw valid JSON (no markdown fences, no LaTeX backslashes — use Unicode symbols like ², ×, →, ≠, π, Ω) with schema: { "questions": [{ "id": string, "prompt": string, "options": [string, string, string, string], "correctIndex": 0|1|2|3, "explanation": string }] }. You MUST generate the EXACT number of distinct questions requested.',
           },
           {
             role: 'user',
-            content: `Generate ${count} ${difficulty}-difficulty multiple-choice questions for ${subject} on topic "${topic}".`,
+            content: `Generate EXACTLY ${count} distinct ${difficulty}-difficulty exam questions for ${subject} on topic "${topic}". Each question must have 4 realistic options, the right correctIndex (0-3), and a clear 1-2 sentence explanation.`,
           },
         ],
-        1300
+        tokenBudget,
+        true
       );
-      const cleaned = reply.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-      res.status(200).json(JSON.parse(cleaned));
+      const cleaned = reply
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/i, '')
+        .trim()
+        .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+        .replace(/,\s*([}\]])/g, '$1');
+      const parsed = JSON.parse(cleaned);
+      const list = Array.isArray(parsed) ? parsed : parsed?.questions ?? [];
+      res.status(200).json({ questions: list });
       return;
     }
 

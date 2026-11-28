@@ -572,50 +572,29 @@ export async function generateQuizQuestions(params: {
   >
 > {
   const remote = await postToGateway<
-    { id: string; prompt: string; options: string[]; correctIndex: number; explanation: string }[]
+    | { questions?: { id: string; prompt: string; options: string[]; correctIndex: number; explanation: string }[] }
+    | { id: string; prompt: string; options: string[]; correctIndex: number; explanation: string }[]
   >('/quiz-generator', params);
-  if (remote) return { data: remote, source: 'live-gateway' };
+  const remoteList = Array.isArray(remote) ? remote : remote?.questions;
+  if (remoteList && remoteList.length > 0) {
+    return { data: remoteList, source: 'live-gateway' };
+  }
 
-  const bank = [
-    {
-      id: 'q-1',
-      prompt: `Which statement best describes the core rule of ${params.topic} in ${params.subject}?`,
-      options: [
-        'It links foundational definitions directly to measurable outcomes.',
-        'It only applies when all variables are zero.',
-        'It ignores conservation or balance laws.',
-        'It cannot be represented mathematically or structurally.',
-      ],
-      correctIndex: 0,
-      explanation: `In ${params.topic}, connecting definitions to measurable relationships is the key principle.`,
-    },
-    {
-      id: 'q-2',
-      prompt: `What is the most common mistake students make when solving ${params.topic} (${params.difficulty}) problems?`,
-      options: [
-        'Writing down the formula first',
-        'Skipping sign checks or unit conversions',
-        'Verifying the final answer',
-        'Drawing a quick sketch',
-      ],
-      correctIndex: 1,
-      explanation: 'Sign errors and unit mismatches are the #1 cause of lost marks on exams.',
-    },
-    {
-      id: 'q-3',
-      prompt: `When reviewing ${params.topic} before an exam, which strategy gives the highest retention?`,
-      options: [
-        'Passive rereading without practice',
-        'Active recall with timed practice questions',
-        'Memorizing only the chapter title',
-        'Skipping worked examples',
-      ],
-      correctIndex: 1,
-      explanation: 'Active recall and spaced practice consistently outperform passive rereading.',
-    },
-  ];
+  const targetCount = Math.min(20, Math.max(1, params.count));
+  const fallback = Array.from({ length: targetCount }, (_, i) => ({
+    id: `q-${i + 1}`,
+    prompt: `Question ${i + 1} (${params.difficulty}): Which principle best applies to ${params.topic} in ${params.subject}?`,
+    options: [
+      `Apply core ${params.topic} definitions and SI units accurately`,
+      'Ignore boundary conditions and skip working steps',
+      'Assume all variables remain constant in every scenario',
+      'Memorize unrelated formulas without context',
+    ],
+    correctIndex: 0,
+    explanation: `In ${params.subject} (${params.topic}), applying exact definitions and clear step-by-step reasoning earns full marks.`,
+  }));
   return {
     source: 'local-prototype',
-    data: bank.slice(0, Math.max(1, Math.min(params.count, bank.length))),
+    data: fallback,
   };
 }
