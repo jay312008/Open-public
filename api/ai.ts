@@ -118,6 +118,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     if (route === 'chat') {
       const question = String(body.question ?? '').trim();
       const subject = body.subject ? String(body.subject) : 'general studies';
+      const companionName = body.companionName ? String(body.companionName).slice(0, 30) : 'Molly';
       const learningContext = body.learningContext ? String(body.learningContext).slice(0, 800) : '';
       const rawHistory = Array.isArray(body.history) ? body.history : [];
       const historyMsgs: ChatMessage[] = rawHistory
@@ -141,7 +142,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           {
             role: 'system',
             content:
-              'You are Molly, a warm, attentive, 1-on-1 human-like tutor in LearnyMol. RULES: (1) ALWAYS listen carefully to the student\'s exact message and the conversation history — NEVER switch to an unrelated topic! (2) Talk naturally like a caring teacher sitting beside the student: clear, simple English, never robotic or overly dense. (3) For math/science equations, put each step on its own clean line so nothing is squeezed together. (4) NEVER use LaTeX backslashes (no \\rightarrow, \\frac, \\neq, \\sqrt, no $ signs) — use plain Unicode symbols (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). (5) If the student asks for a table, comparison, truth table, periodic table, chemical bond, organic structure, graph, or diagram, ALWAYS use the exact right widget! Return ONLY raw valid JSON with schema: { "heading"?: string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Widget types: (1) { "type":"function_plot", "title":string, "expression":string, "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } (2) { "type":"table", "title":string, "headers":string[], "rows":string[][], "caption":string } — use for ANY spreadsheet/comparison/truth/values table! (3) { "type":"periodic_table", "title":string, "caption":string } — use whenever the student asks for the Periodic Table! (4) { "type":"molecule", "title":string, "atoms"?:[{"id":string,"symbol":string,"x":number,"y":number,"charge"?:string}], "bonds"?:[{"from":string,"to":string,"order"?:1|2|3}], "shells"?:[{"symbol":string,"charge"?:string,"rings":number[],"style":"dot"|"cross"}], "caption":string } on a 320x190 canvas — use for chemical bonding dot-and-cross shells or organic structural formulas! (5) { "type":"canvas_diagram", "title":string, "primitives":[{"kind":"line"|"circle"|"rect"|"path"|"text","x1"?:n,"y1"?:n,"x2"?:n,"y2"?:n,"cx"?:n,"cy"?:n,"r"?:n,"x"?:n,"y"?:n,"w"?:n,"h"?:n,"d"?:s,"content"?:s,"color"?:s,"fill"?:s}], "caption":string } on a 264x150 canvas (6) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (7) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (8) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }.',
+              `You are ${companionName}, a warm, attentive, 1-on-1 human-like tutor in LearnyMol. If asked your name, always say your name is ${companionName}. RULES: (1) ALWAYS listen carefully to the student's exact message and the conversation history — NEVER switch to an unrelated topic! (2) Talk naturally like a caring teacher sitting beside the student: clear, simple English, never robotic or overly dense. (3) For math/science equations, put each step on its own clean line so nothing is squeezed together. (4) NEVER use LaTeX backslashes (no \\rightarrow, \\frac, \\neq, \\sqrt, no $ signs) — use plain Unicode symbols (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). (5) If the student asks for a table, comparison, truth table, periodic table, chemical bond, organic structure, graph, or diagram, ALWAYS use the exact right widget! Return ONLY raw valid JSON with schema: { "heading"?: string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Widget types: (1) { "type":"function_plot", "title":string, "expression":string, "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } (2) { "type":"table", "title":string, "headers":string[], "rows":string[][], "caption":string } — use for ANY spreadsheet/comparison/truth/values table! (3) { "type":"periodic_table", "title":string, "caption":string } — use whenever the student asks for the Periodic Table! (4) { "type":"molecule", "title":string, "atoms"?:[{"id":string,"symbol":string,"x":number,"y":number,"charge"?:string}], "bonds"?:[{"from":string,"to":string,"order"?:1|2|3}], "shells"?:[{"symbol":string,"charge"?:string,"rings":number[],"style":"dot"|"cross"}], "caption":string } on a 320x190 canvas — ALWAYS use "molecule" (NOT canvas_diagram) for chemical bonding dot-and-cross shells or organic structural formulas! (5) { "type":"canvas_diagram", "title":string, "primitives":[{"kind":"line"|"circle"|"rect"|"path"|"text","x1"?:n,"y1"?:n,"x2"?:n,"y2"?:n,"cx"?:n,"cy"?:n,"r"?:n,"x"?:n,"y"?:n,"w"?:n,"h"?:n,"d"?:s,"content"?:s,"color"?:s,"fill"?:s}], "caption":string } on a 264x160 canvas (6) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (7) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (8) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }.`,
           },
           ...historyMsgs,
           {
@@ -285,6 +286,51 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
               caption: `Live plot of y = ${expr}. Edit the equation or trace points below.`,
             },
             ...existing,
+          ];
+        }
+      }
+
+      // Auto-upgrade chemical bonding visual requests to crisp dot-and-cross molecule shells
+      // instead of messy raw canvas_diagram circles/overlapping text
+      const recentContext = [
+        ...historyMsgs.slice(-4).map((m) => m.content),
+        question,
+        String(parsed.heading ?? ''),
+      ].join(' ');
+      const asksVisual = /\b(draw|diagram|visual|graph|sketch|illustrat|represent|show|dot[\s-]and[\s-]cross|shell)\b/i.test(question);
+      const isBondingTopic = /\b(ionic\s+bond|covalent\s+bond|chemical\s+bond|dot[\s-]and[\s-]cross|electron\s+transfer|nacl)\b/i.test(recentContext);
+      if (asksVisual && isBondingTopic) {
+        const existing = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        const hasMolecule = existing.some((w: unknown) => (w as { type?: string })?.type === 'molecule');
+        if (!hasMolecule) {
+          const isCovalentOnly = /\bcovalent\b/i.test(recentContext) && !/\bionic\b/i.test(recentContext);
+          const bondingWidget = isCovalentOnly
+            ? {
+                type: 'molecule',
+                title: 'Covalent Bonding — Water (H₂O) Shared Electron Pairs',
+                atoms: [
+                  { id: 'h1', symbol: 'H', x: 75, y: 120, color: '#0EA5E9' },
+                  { id: 'o1', symbol: 'O', x: 160, y: 72, color: '#EF4444' },
+                  { id: 'h2', symbol: 'H', x: 245, y: 120, color: '#0EA5E9' },
+                ],
+                bonds: [
+                  { from: 'h1', to: 'o1', order: 1 },
+                  { from: 'o1', to: 'h2', order: 1 },
+                ],
+                caption: 'Oxygen shares one pair of electrons with each Hydrogen atom to complete its outer shell.',
+              }
+            : {
+                type: 'molecule',
+                title: 'Ionic Bonding — Dot-and-Cross Diagram (Na⁺Cl⁻)',
+                shells: [
+                  { symbol: 'Na', charge: '+', rings: [2, 8], style: 'cross' },
+                  { symbol: 'Cl', charge: '−', rings: [2, 8, 8], style: 'dot' },
+                ],
+                caption: 'Sodium (2,8,1) transfers 1 outer electron (×) to Chlorine (2,8,7), forming stable Na⁺ [2,8] and Cl⁻ [2,8,8] ions.',
+              };
+          parsed.widgets = [
+            bondingWidget,
+            ...existing.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
           ];
         }
       }

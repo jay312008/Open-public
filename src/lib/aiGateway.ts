@@ -262,7 +262,8 @@ export async function askMollyAI(
   question: string,
   subject?: string,
   learningContext?: string,
-  history?: { role: 'user' | 'assistant'; content: string }[]
+  history?: { role: 'user' | 'assistant'; content: string }[],
+  companionName?: string
 ): Promise<AIResponse<MollyChatReply>> {
   if (isLiveAIGatewayConfigured) {
     const remote = await postToGatewayDetailed<MollyChatReply>('/chat', {
@@ -270,6 +271,7 @@ export async function askMollyAI(
       subject,
       learningContext,
       history,
+      companionName,
     });
     if (remote.data && remote.data.text) {
       return { data: sanitizeMollyReply(remote.data), source: 'live-gateway' };

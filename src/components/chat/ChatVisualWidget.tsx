@@ -390,10 +390,34 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
   );
 }
 
-/* 2. DYNAMIC VECTOR CANVAS DIAGRAM — AI draws custom shapes, arrows, molecules, forces, circuits, geometry! */
+/* 2. DYNAMIC VECTOR CANVAS DIAGRAM — AI draws custom shapes, arrows, molecules, forces, circuits, geometry with auto label collision avoidance! */
 function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
   const { colors, isDark } = useTheme();
   const primitives = widget.primitives ?? [];
+
+  // Pre-compute non-overlapping positions for text labels so text never collides on top of text!
+  const placedTextBoxes: { x0: number; x1: number; y: number }[] = [];
+  const resolvedTextPos = new Map<number, { x: number; y: number }>();
+
+  primitives.forEach((p, idx) => {
+    if (p.kind !== 'text' || !p.content) return;
+    const estWidth = Math.min(180, p.content.length * 5.6);
+    let x = Math.max(10, Math.min(254 - estWidth / 2, p.x ?? 132));
+    let y = Math.max(16, Math.min(148, p.y ?? 24));
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const x0 = x - estWidth / 2;
+      const x1 = x + estWidth / 2;
+      const collides = placedTextBoxes.some(
+        (b) => Math.abs(b.y - y) < 14 && x0 < b.x1 + 4 && x1 > b.x0 - 4
+      );
+      if (!collides) break;
+      y = y + 15 <= 150 ? y + 15 : Math.max(14, y - 15);
+    }
+
+    placedTextBoxes.push({ x0: x - estWidth / 2, x1: x + estWidth / 2, y });
+    resolvedTextPos.set(idx, { x, y });
+  });
 
   return (
     <View
@@ -403,7 +427,7 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
       ]}
     >
       {widget.title && <Text style={[styles.boardTitle, { color: colors.text }]}>{widget.title}</Text>}
-      <Svg width={264} height={150} viewBox="0 0 264 150">
+      <Svg width="100%" height={180} viewBox="0 0 264 160">
         {primitives.map((p, idx) => {
           const stroke = p.color || '#7C3AED';
           if (p.kind === 'line') {
@@ -426,7 +450,7 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
               <Circle
                 key={idx}
                 cx={p.cx ?? 132}
-                cy={p.cy ?? 75}
+                cy={p.cy ?? 80}
                 r={p.r ?? 20}
                 stroke={stroke}
                 strokeWidth={2.2}
@@ -463,13 +487,15 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
             );
           }
           if (p.kind === 'text' && p.content) {
+            const pos = resolvedTextPos.get(idx) ?? { x: p.x ?? 132, y: p.y ?? 20 };
             return (
               <SvgText
                 key={idx}
-                x={p.x ?? 20}
-                y={p.y ?? 20}
-                fontSize={10.5}
+                x={pos.x}
+                y={pos.y}
+                fontSize={10}
                 fontWeight="bold"
+                textAnchor="middle"
                 fill={p.color || colors.text}
               >
                 {p.content}

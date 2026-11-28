@@ -199,7 +199,12 @@ export interface SavedConversation {
     id: string;
     role: 'user' | 'assistant';
     text: string;
+    heading?: string;
     equation?: string;
+    steps?: { title: string; detail: string }[];
+    example?: string;
+    tip?: string;
+    widgets?: unknown[];
     createdAt: string;
   }[];
 }

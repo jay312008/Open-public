@@ -108,7 +108,12 @@ export default function AskMollyScreen() {
           id: m.id,
           role: m.role,
           text: m.text,
+          heading: m.heading,
           equation: m.equation,
+          steps: m.steps,
+          example: m.example,
+          tip: m.tip,
+          widgets: m.widgets as ChatWidgetSpec[] | undefined,
           timestamp: m.createdAt,
         }))
       );
@@ -140,8 +145,8 @@ export default function AskMollyScreen() {
     setInput('');
     setLoading(true);
 
-    logStudyActivity(`Asked Molly: ${clean.slice(0, 60)}`);
-    consumeCredits(1, `Ask Molly: ${clean.slice(0, 32)}`, 'ai-chat');
+    logStudyActivity(`Asked ${companion.name}: ${clean.slice(0, 60)}`);
+    consumeCredits(1, `Chat with ${companion.name}: ${clean.slice(0, 32)}`, 'ai-chat');
     const memContext = learningMemory.shareContextWithAI
       ? `Education level: ${profile.educationLevel}.${
           learningMemory.weakTopics.length > 0
@@ -158,7 +163,7 @@ export default function AskMollyScreen() {
         content: [m.heading, m.text, m.equation].filter(Boolean).join('\n'),
       }));
 
-    const res = await askMollyAI(clean, undefined, memContext, historyPayload);
+    const res = await askMollyAI(clean, undefined, memContext, historyPayload, companion.name);
     const enriched = buildRichMessage(clean, res.data, firstName);
     const botMsg: ChatMsg = {
       id: `a-${Date.now()}`,
@@ -180,7 +185,12 @@ export default function AskMollyScreen() {
         id: m.id,
         role: m.role,
         text: m.text,
+        heading: m.heading,
         equation: m.equation,
+        steps: m.steps,
+        example: m.example,
+        tip: m.tip,
+        widgets: m.widgets,
         createdAt: m.timestamp,
       })),
     });
