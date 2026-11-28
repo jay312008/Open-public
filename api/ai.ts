@@ -387,27 +387,32 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       const topic = String(body.topic ?? 'Core Topic');
       const mode = String(body.mode ?? 'initial'); // 'initial' | 'continue'
       const previousSections = Array.isArray(body.previousSections)
-        ? body.previousSections.map(String).slice(0, 20)
+        ? body.previousSections.map(String).slice(0, 25)
         : [];
       const reply = await callNvidia(
         [
           {
             role: 'system',
             content:
-              'You are Molly, a warm, crystal-clear academic teacher. Return ONLY raw valid JSON (no markdown fences, NEVER use LaTeX backslashes — use Unicode symbols like →, ², ×, Ω, π, ≠) with schema: { "title": string, "sections": [{ "heading": string, "body": string }], "workedExample": string, "examTip": string }.',
+              'You are a master Cameroon GCE & University teacher creating complete, classroom-ready digital textbook notes. NEVER use LaTeX backslashes (no \\frac, \\rightarrow, \\neq, no $ signs) — use clean Unicode (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). For any math/science worked example, use the clear 9-step presentation (Question, Known values, Required, Formula, Variables, Substitution, Calculation step-by-step on separate lines, Final Answer with unit, Interpretation). Return ONLY raw valid JSON with schema: { "title": string, "introduction": string, "objectives": string[], "keyTerms": [{ "term": string, "definition": string }], "sections": [{ "heading": string, "body": string }], "workedExample": string, "commonMistakes": string, "examTip": string, "summaryPoints": string[], "exercises": [{ "question": string, "solution": string }], "widgets"?: Widget[] }. Include a dynamic visual widget (function_plot, wave, canvas_diagram, chart, or calculator) whenever the topic benefits from visual learning (e.g. Waves, Functions, Forces, Circuits, Cells, Bonding).',
           },
           {
             role: 'user',
             content:
               mode === 'continue'
-                ? `Write the NEXT continuation part of the study notes for ${level} ${subject} — "${topic}". STRICTLY DO NOT repeat any of these already-covered sections: [${previousSections.join(', ')}]. Teach brand-new subtopics, deeper applications, and a fresh worked example.`
-                : `Write clear, student-friendly exam study notes for ${level} ${subject} — "${topic}" with 3 concise sections, 1 clear worked example (each step on its own line), and 1 examiner tip.`,
+                ? `Write the NEXT continuation part of the ${level} ${subject} lesson on "${topic}". STRICTLY DO NOT repeat any of these already-covered sections: [${previousSections.join(', ')}]. Teach brand-new subtopics, deeper exam applications, a fresh 9-step worked example, and 2 new practice exercises.`
+                : `Write a complete, thorough ${level} ${subject} classroom lesson on "${topic}" aligned strictly to ${level} depth (never mix O-Level and A-Level). Include introduction, 3 learning objectives, 3-4 key terms, 3-4 detailed subtopic sections, a clear 9-step worked example (if applicable) or real-world demonstration, common mistakes, summary points, and 2 practice exercises with solutions.`,
           },
         ],
-        1400,
+        2000,
         true
       );
-      const cleaned = reply.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim().replace(/,\s*([}\]])/g, '$1');
+      const cleaned = reply
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/i, '')
+        .trim()
+        .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+        .replace(/,\s*([}\]])/g, '$1');
       res.status(200).json(JSON.parse(cleaned));
       return;
     }

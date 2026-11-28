@@ -1,7 +1,8 @@
 import { BadgeItem, CommunityPost, PublicStudent, StudyGroup, SubjectItem } from '@/types/models';
 import { GCE_AND_UNI_SUBJECTS } from './gceCatalog';
+import { ALL_GCE_TOPIC_TITLES } from './gceTopics';
 
-export const SUBJECT_CATALOG: SubjectItem[] = [
+const RAW_SUBJECT_CATALOG: SubjectItem[] = [
   {
     id: 'math',
     code: 'GCE 0570',
@@ -330,6 +331,43 @@ export const SUBJECT_CATALOG: SubjectItem[] = [
   },
   ...GCE_AND_UNI_SUBJECTS,
 ];
+
+export const SUBJECT_CATALOG: SubjectItem[] = RAW_SUBJECT_CATALOG.map((sub) => {
+  const officialTitles = ALL_GCE_TOPIC_TITLES[sub.id];
+  if (!officialTitles || officialTitles.length === 0) return sub;
+
+  const existingByLower = new Map(sub.topics.map((t) => [t.title.toLowerCase(), t]));
+  const fullTopics = officialTitles.map((title, idx) => {
+    const existing = existingByLower.get(title.toLowerCase());
+    if (existing) return existing;
+    const topicId = `${sub.id}-gce-${idx + 1}`;
+    return {
+      id: topicId,
+      subjectId: sub.id,
+      title,
+      description: `${sub.level} ${sub.name} syllabus topic — tap to generate full classroom notes, worked examples, diagrams & exercises.`,
+      estimatedMinutes: 40,
+      difficulty: (idx < 8 ? 'Easy' : idx < 18 ? 'Medium' : 'Hard') as 'Easy' | 'Medium' | 'Hard',
+      lessons: [
+        {
+          id: `${topicId}-l1`,
+          topicId,
+          subjectId: sub.id,
+          title,
+          durationMinutes: 30,
+          summary: `Complete ${sub.level} ${sub.name} lesson on ${title}.`,
+          keyPoints: [
+            `Understand core ${sub.level} principles of ${title}`,
+            `Master worked examples, formulas, and exam applications`,
+            `Check understanding with practice exercises & flashcards`,
+          ],
+        },
+      ],
+    };
+  });
+
+  return { ...sub, topics: fullTopics };
+});
 
 export const DEFAULT_BADGES: BadgeItem[] = [
   {

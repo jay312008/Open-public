@@ -161,9 +161,16 @@ export async function generateAITimetableAPI(input: {
 
 export interface GeneratedTopicNotes {
   title: string;
+  introduction?: string;
+  objectives?: string[];
+  keyTerms?: { term: string; definition: string }[];
   sections: { heading: string; body: string }[];
-  workedExample: string;
-  examTip: string;
+  workedExample?: string;
+  commonMistakes?: string;
+  examTip?: string;
+  summaryPoints?: string[];
+  exercises?: { question: string; solution: string }[];
+  widgets?: ChatWidgetSpec[];
 }
 
 export async function generateTopicNotesAPI(input: {
