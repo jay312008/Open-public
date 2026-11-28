@@ -29,6 +29,13 @@ export const SubjectCardAssets = {
   techBg: require('../../assets/images/subjects/tech_bg.jpg') as ImageSourcePropType,
 };
 
+export const CompanionAssets: Record<CompanionId, ImageSourcePropType> = {
+  molly: require('../../assets/images/logo-mascot-transparent.png') as ImageSourcePropType,
+  leo: require('../../assets/images/companions/leo.png') as ImageSourcePropType,
+  pip: require('../../assets/images/companions/pip.png') as ImageSourcePropType,
+  zuri: require('../../assets/images/companions/zuri.png') as ImageSourcePropType,
+};
+
 export type CompanionId = 'molly' | 'leo' | 'pip' | 'zuri';
 
 export interface CompanionConfig {
