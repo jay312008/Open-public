@@ -21,6 +21,8 @@ import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
 import { askMollyAI, generateLiveLessonSteps, isLiveAIGatewayConfigured } from '@/lib/aiGateway';
 import { ChatVisualWidget, ChatWidgetSpec } from '@/components/chat/ChatVisualWidget';
+import { CodeSandboxModal } from '@/components/visuals/CodeSandboxModal';
+import { getCompanionById } from '@/constants/assets';
 import { LiveBoardElement, LiveLessonStep } from '@/types/models';
 
 type BoardSurfaceId = 'white' | 'dark' | 'blue' | 'cream' | 'mint';
@@ -105,8 +107,10 @@ function getSemanticStyle(role: SemanticRole, isDarkSurface: boolean) {
 export default function LiveTeacherScreen() {
   const { colors } = useTheme();
   const { profile, saveConversation } = useApp();
+  const companion = getCompanionById(profile.companionId);
 
   const [topic, setTopic] = useState('Quadratic Equations');
+  const [codeSandboxOpen, setCodeSandboxOpen] = useState(false);
   const [boardSurfaceId, setBoardSurfaceId] = useState<BoardSurfaceId>('white');
   const [writeMode, setWriteMode] = useState<'pen' | 'type'>('pen');
   const [drawTool, setDrawTool] = useState<DrawTool>('pen');
@@ -404,7 +408,7 @@ export default function LiveTeacherScreen() {
   return (
     <AppBackground>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <BrandHeader showBack title="Molly Live Board" />
+        <BrandHeader showBack title={`${companion.name} Live Board`} />
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {/* Honest AI Engine Status */}
@@ -426,7 +430,7 @@ export default function LiveTeacherScreen() {
               ]}
             >
               {isLiveAIGatewayConfigured
-                ? 'Live NVIDIA AI Board · Tap Mic or Type to Interrupt Live'
+                ? 'Live AI Visual Classroom · Tap Mic or Type to Interrupt Live'
                 : 'Interactive Canvas & Speech Prototype (Connect Vercel / Gemini Live for real-time audio)'}
             </Text>
           </View>
@@ -451,13 +455,13 @@ export default function LiveTeacherScreen() {
             </AnimatedPressable>
           </View>
 
-          {/* 2 Writing Modes Switcher: Freehand Pen vs Typed Board Blocks */}
+          {/* Workspace Modes: Freehand Pen | Type on Board | Code Sandbox */}
           <View style={[styles.toolbarCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
               {(
                 [
-                  { id: 'pen', label: 'Mode 1: Freehand Pen', icon: 'brush-outline' },
-                  { id: 'type', label: 'Mode 2: Type on Board', icon: 'text-outline' },
+                  { id: 'pen', label: 'Freehand', icon: 'brush-outline' },
+                  { id: 'type', label: 'Type Board', icon: 'text-outline' },
                 ] as const
               ).map((m) => {
                 const active = writeMode === m.id;
@@ -486,7 +490,30 @@ export default function LiveTeacherScreen() {
                   </AnimatedPressable>
                 );
               })}
+              <AnimatedPressable
+                onPress={() => setCodeSandboxOpen(true)}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  paddingVertical: 8,
+                  borderRadius: 12,
+                  backgroundColor: colors.surfacePurpleSoft,
+                }}
+              >
+                <Ionicons name="code-slash-outline" size={14} color={colors.purple} />
+                <Text style={{ fontSize: 11.5, fontWeight: '800', color: colors.purple }}>
+                  Code Lab
+                </Text>
+              </AnimatedPressable>
             </View>
+            <CodeSandboxModal
+              visible={codeSandboxOpen}
+              onClose={() => setCodeSandboxOpen(false)}
+              initialTitle={`${topic || 'Interactive'} — Visual Code Sandbox`}
+            />
 
             <View style={styles.toolRow}>
               <Text style={[styles.toolSectionLbl, { color: colors.textSecondary }]}>Board:</Text>

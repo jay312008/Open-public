@@ -369,31 +369,17 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           });
       }
 
-      // Auto-upgrade Wave diagram requests to the interactive Wave widget if no wave widget was included
-      if (asksVisual && /\b(wave|waves|transverse|longitudinal|wavelength|crest|trough|amplitude)\b/i.test(recentContext) && !/\b(echo|refract|deflect|mirror)\b/i.test(recentContext)) {
-        const currentWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
-        const hasWave = currentWidgets.some((w: unknown) => (w as { type?: string })?.type === 'wave');
-        if (!hasWave) {
-          const isLongitudinal = /\blongitudinal\b/i.test(question) && !/\btransverse\b/i.test(question);
-          parsed.widgets = [
-            {
-              type: 'wave',
-              title: isLongitudinal
-                ? 'Interactive Longitudinal Wave (Compressions & Rarefactions)'
-                : 'Interactive Transverse Wave (Crest, Trough, Amplitude & Wavelength)',
-              variant: isLongitudinal ? 'longitudinal' : 'transverse',
-              frequency: 2,
-              amplitude: 34,
-              caption: 'Adjust frequency and amplitude interactively to see how wavelength and wave height change.',
-            },
-            ...currentWidgets.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
-          ];
-        }
-      }
+      // INTELLIGENT VISUALIZATION DECISION ENGINE (Sections 3, 5, 6, 11, 12, 16)
+      // 1. Respect text-only factual/definition questions (e.g., "What is the definition of photosynthesis?") unless visual explicitly requested
+      const isDefinitionOnly =
+        /^\s*(what\s+is\s+the\s+definition\s+of|define\b|what\s+does\s+.+\s+mean|who\s+discovered|when\s+did)\b/i.test(question) &&
+        !asksVisual;
 
-      // Ensure rich textbook-accurate 340x220 scientific canvas diagrams for Optics (Refraction/Reflection), Echo, Geometry/Ladder, and Potential Difference/Circuits
-      if (asksVisual) {
+      if (isDefinitionOnly) {
+        parsed.widgets = [];
+      } else {
         const currentWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        const hasType = (t: string) => currentWidgets.some((w: unknown) => (w as { type?: string })?.type === t);
         const hasRichCanvas = currentWidgets.some(
           (w: unknown) =>
             (w as { type?: string; primitives?: unknown[] })?.type === 'canvas_diagram' &&
@@ -401,12 +387,185 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             ((w as { primitives?: unknown[] }).primitives?.length ?? 0) >= 5
         );
 
-        if (!hasRichCanvas) {
+        // A. Interactive 3D Models (Water H2O, Methane CH4, 3D Cube, 3D Pyramid)
+        if (/\b(3d|three[\s-]dimensional)\b/i.test(question) || /\b(water\s+molecule|h2o\s+structure|methane\s+structure|tetrahedral)\b/i.test(question)) {
+          if (!hasType('model_3d')) {
+            const preset3d = /\bmethane|ch4\b/i.test(question)
+              ? 'methane_ch4'
+              : /\bcube\b/i.test(question)
+                ? 'cube_3d'
+                : /\bpyramid\b/i.test(question)
+                  ? 'pyramid_3d'
+                  : 'water_h2o';
+            parsed.widgets = [{ type: 'model_3d', preset3d }, ...currentWidgets];
+          }
+        }
+        // B. Interactive Code-Based Simulation (Projectile Motion)
+        else if (/\b(projectile|trajectory|launch\s+angle|initial\s+velocity)\b/i.test(question)) {
+          if (!hasType('code_sim')) {
+            parsed.widgets = [
+              {
+                type: 'code_sim',
+                title: 'Animated Projectile Motion Simulation',
+                caption: 'Adjust initial velocity (v₀) and launch angle (θ) to observe Range R = (v₀²·sin 2θ)/g, Max Height, and parabolic trajectory live.',
+                codeExplanation:
+                  'This HTML5 Canvas simulation splits initial velocity into horizontal vx = v₀·cos(θ) (constant) and vertical vy = v₀·sin(θ) (accelerated downward by g = 9.81 m/s²), updating position (x, y) each frame.',
+              },
+              ...currentWidgets,
+            ];
+          }
+        }
+        // C. Preloaded Educational Asset Library (Plant Cell, Human Heart, River Meander, Newton's 2nd Law, Atom)
+        else if (/\bplant\s+cell\b/i.test(question)) {
+          if (!hasType('asset_ref')) {
+            parsed.widgets = [{ type: 'asset_ref', assetId: 'plant_cell' }, ...currentWidgets];
+          }
+        } else if (/\bhuman\s+heart\b|\bheart\s+structure\b|\bchambers\s+of\s+the\s+heart\b/i.test(question)) {
+          if (!hasType('asset_ref')) {
+            parsed.widgets = [{ type: 'asset_ref', assetId: 'human_heart', animation: 'blood_flow' }, ...currentWidgets];
+          }
+        } else if (/\briver\s+meander\b|\bmeander\b/i.test(question)) {
+          if (!hasType('asset_ref')) {
+            parsed.widgets = [{ type: 'asset_ref', assetId: 'river_meander', animation: 'river_flow' }, ...currentWidgets];
+          }
+        } else if (/\bnewton'?s\s+second\s+law\b|\bf\s*=\s*ma\b|\bfree[\s-]body\s+diagram\b/i.test(question)) {
+          if (!hasType('asset_ref')) {
+            parsed.widgets = [{ type: 'asset_ref', assetId: 'newtons_second_law', animation: 'force_motion' }, ...currentWidgets];
+          }
+        } else if (/\bstructure\s+of\s+an?\s+atom\b|\bbohr\s+model\b|\bprotons\s+and\s+neutrons\b/i.test(question)) {
+          if (!hasType('asset_ref') && !hasType('molecule')) {
+            parsed.widgets = [{ type: 'asset_ref', assetId: 'atom_bohr' }, ...currentWidgets];
+          }
+        }
+        // D. Multiple Visualizations: Open Circuit vs Closed Circuit (2 independent diagrams!)
+        else if (/\bopen\s+circuit\b/i.test(question) && /\bclosed\s+circuit\b/i.test(question)) {
+          const openCircuit = {
+            type: 'canvas_diagram',
+            title: '1. Open Electrical Circuit (Switch Open — No Current)',
+            primitives: [
+              { kind: 'line', x1: 56, y1: 52, x2: 140, y2: 52, color: '#334155', strokeWidth: 2.5 },
+              { kind: 'line', x1: 140, y1: 52, x2: 186, y2: 26, color: '#EF4444', strokeWidth: 3 },
+              { kind: 'line', x1: 192, y1: 52, x2: 284, y2: 52, color: '#334155', strokeWidth: 2.5 },
+              { kind: 'line', x1: 284, y1: 52, x2: 284, y2: 164, color: '#334155', strokeWidth: 2.5 },
+              { kind: 'line', x1: 284, y1: 164, x2: 56, y2: 164, color: '#334155', strokeWidth: 2.5 },
+              { kind: 'line', x1: 56, y1: 164, x2: 56, y2: 52, color: '#334155', strokeWidth: 2.5 },
+              { kind: 'circle', cx: 170, cy: 164, r: 18, color: '#64748B', fill: '#F1F5F9', strokeWidth: 2.4 },
+              { kind: 'text', x: 170, y: 168, content: 'OFF', color: '#64748B', fontSize: 10 },
+              { kind: 'text', x: 166, y: 20, content: 'Open Switch (Gap)', color: '#DC2626', fontSize: 10.5 },
+              { kind: 'text', x: 170, y: 202, content: 'Break in path stops electrons — Lamp stays OFF (I = 0 A)', color: '#475569', fontSize: 10 },
+            ],
+            caption: 'In an open circuit, the broken path prevents continuous charge flow.',
+          };
+          const closedCircuit = {
+            type: 'canvas_diagram',
+            title: '2. Closed Electrical Circuit (Switch Closed — Current Flows)',
+            animation: 'current_flow',
+            primitives: [
+              { kind: 'rect', x: 56, y: 52, w: 228, h: 112, color: '#16A34A', fill: 'none', strokeWidth: 2.5 },
+              { kind: 'arrow', x1: 72, y1: 52, x2: 268, y2: 52, color: '#16A34A', strokeWidth: 2.8 },
+              { kind: 'arrow', x1: 284, y1: 68, x2: 284, y2: 152, color: '#16A34A', strokeWidth: 2.8 },
+              { kind: 'arrow', x1: 268, y1: 164, x2: 72, y2: 164, color: '#16A34A', strokeWidth: 2.8 },
+              { kind: 'circle', cx: 170, cy: 164, r: 18, color: '#F59E0B', fill: '#FEF08A', strokeWidth: 2.6 },
+              { kind: 'text', x: 170, y: 168, content: 'ON', color: '#B45309', fontSize: 10.5 },
+              { kind: 'text', x: 170, y: 34, content: 'Closed Switch → Current I Flows', color: '#15803D', fontSize: 10.5 },
+              { kind: 'text', x: 170, y: 202, content: 'Complete loop allows continuous current — Lamp glows ON', color: '#15803D', fontSize: 10 },
+            ],
+            caption: 'In a closed circuit, the complete conducting loop allows continuous current flow.',
+          };
+          parsed.widgets = [openCircuit, closedCircuit];
+        }
+        // E. Interactive Wave Simulation
+        else if (
+          /\b(wave|waves|transverse|longitudinal|wavelength|crest|trough|amplitude)\b/i.test(question) &&
+          !/\b(echo|refract|deflect|mirror)\b/i.test(question)
+        ) {
+          if (!hasType('wave')) {
+            const isLongitudinal = /\blongitudinal\b/i.test(question) && !/\btransverse\b/i.test(question);
+            parsed.widgets = [
+              {
+                type: 'wave',
+                title: isLongitudinal
+                  ? 'Interactive Longitudinal Wave (Compressions & Rarefactions)'
+                  : 'Interactive Transverse Wave (Crest, Trough, Amplitude & Wavelength)',
+                variant: isLongitudinal ? 'longitudinal' : 'transverse',
+                frequency: 2,
+                amplitude: 34,
+                caption: 'Adjust frequency and amplitude interactively to see how wavelength and wave height change.',
+              },
+              ...currentWidgets.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
+            ];
+          }
+        }
+        // F. Deterministic Right-Angled Triangle / Pythagoras / Ladder Problem
+        else if (/\b(pythagor|right[\s-]angled?\s+triangle|hypotenuse|ladder)\b/i.test(question) && !hasRichCanvas) {
+          const nums = (question.match(/\b(\d+(?:\.\d+)?)\s*(cm|m|mm|km|ft|in)?\b/gi) ?? [])
+            .map((m) => {
+              const p = m.match(/(\d+(?:\.\d+)?)\s*(cm|m|mm|km|ft|in)?/i);
+              return p ? { val: parseFloat(p[1]), unit: p[2] || 'cm' } : null;
+            })
+            .filter((x): x is { val: number; unit: string } => Boolean(x && x.val > 0 && x.val < 10000));
+
+          if (nums.length >= 2) {
+            const hVal = nums[0].val;
+            const bVal = nums[1].val;
+            const unit = nums[0].unit || 'cm';
+            const hyp = Math.sqrt(hVal * hVal + bVal * bVal);
+            const hypStr = Number.isInteger(hyp) ? String(hyp) : hyp.toFixed(2);
+            const maxDim = Math.max(hVal, bVal, 1);
+            const drawW = Math.max(85, Math.min(195, (bVal / maxDim) * 185));
+            const drawH = Math.max(70, Math.min(130, (hVal / maxDim) * 125));
+            const x0 = 84;
+            const y0 = 176;
+            const x1 = x0 + drawW;
+            const yTop = y0 - drawH;
+            parsed.widgets = [
+              {
+                type: 'canvas_diagram',
+                title: `Right-Angled Triangle (${hVal} ${unit} × ${bVal} ${unit} → ${hypStr} ${unit})`,
+                primitives: [
+                  { kind: 'polygon', points: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x0, y: yTop }], color: '#7C3AED', fill: 'rgba(124,92,250,0.12)', strokeWidth: 2.6 },
+                  { kind: 'line', x1: x0, y1: yTop, x2: x1, y2: y0, color: '#FF6B4A', strokeWidth: 3.4 },
+                  { kind: 'right_angle', x: x0, y: y0, size: 15, dx: 1, dy: -1, color: '#7C3AED' },
+                  { kind: 'text', x: x0 - 34, y: (y0 + yTop) / 2, content: `${hVal} ${unit}`, color: '#1E293B', fontSize: 11 },
+                  { kind: 'text', x: (x0 + x1) / 2, y: y0 + 20, content: `${bVal} ${unit}`, color: '#1E293B', fontSize: 11 },
+                  { kind: 'text', x: (x0 + x1) / 2 + 26, y: (y0 + yTop) / 2 - 8, content: `c = ${hypStr} ${unit}`, color: '#EA580C', fontSize: 11.5 },
+                  { kind: 'text', x: x0 + 26, y: y0 - 12, content: '90°', color: '#7C3AED', fontSize: 9.5 },
+                ],
+                caption: `Pythagorean Theorem: c = √(${hVal}² + ${bVal}²) = ${hypStr} ${unit}.`,
+              },
+              ...currentWidgets,
+            ];
+          } else {
+            parsed.widgets = [
+              {
+                type: 'canvas_diagram',
+                title: /\bladder\b/i.test(question)
+                  ? 'Right Triangle Model — Leaning Ladder Problem'
+                  : 'Right-Angled Triangle & Trigonometry',
+                primitives: [
+                  { kind: 'polygon', points: [{ x: 76, y: 176 }, { x: 268, y: 176 }, { x: 76, y: 42 }], color: '#7C3AED', fill: 'rgba(124,92,250,0.12)', strokeWidth: 2.6 },
+                  { kind: 'line', x1: 76, y1: 42, x2: 268, y2: 176, color: '#FF6B4A', strokeWidth: 3.4 },
+                  { kind: 'right_angle', x: 76, y: 176, size: 16, dx: 1, dy: -1, color: '#7C3AED' },
+                  { kind: 'arc', cx: 268, cy: 176, r: 34, startAngle: 180, endAngle: 215, label: 'θ', color: '#EF4444' },
+                  { kind: 'text', x: 44, y: 112, content: 'Height (h)', color: '#1E293B', fontSize: 10.5 },
+                  { kind: 'text', x: 172, y: 198, content: 'Base (b)', color: '#1E293B', fontSize: 10.5 },
+                  { kind: 'text', x: 204, y: 92, content: /\bladder\b/i.test(question) ? 'Ladder (L)' : 'Hypotenuse (c)', color: '#EA580C', fontSize: 11 },
+                  { kind: 'text', x: 104, y: 162, content: '90°', color: '#7C3AED', fontSize: 9.5 },
+                ],
+                caption: 'Pythagoras: h² + b² = c² · Trig: sin(θ) = h/c, cos(θ) = b/c, tan(θ) = h/b.',
+              },
+              ...currentWidgets,
+            ];
+          }
+        }
+        // G. Animated Refraction / Reflection of Light, Echo, Potential Difference, Quadratic Graph
+        else if (!hasRichCanvas) {
           if (/\b(refract|deflect|snell|light\s+bend|air\s+to\s+water|glass\s+block)\b/i.test(recentContext)) {
             parsed.widgets = [
               {
                 type: 'canvas_diagram',
                 title: 'Refraction (Deflection) of Light — Air to Water',
+                animation: 'light_ray',
                 primitives: [
                   { kind: 'rect', x: 16, y: 112, w: 308, h: 94, color: '#0EA5E9', fill: 'rgba(14,165,233,0.14)', strokeWidth: 1.5 },
                   { kind: 'line', x1: 16, y1: 112, x2: 324, y2: 112, color: '#0284C7', strokeWidth: 2.5 },
@@ -425,11 +584,12 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
               },
               ...currentWidgets,
             ];
-          } else if (/\b(reflect|mirror|law\s+of\s+reflection)\b/i.test(recentContext) && /\b(light|ray|mirror|angle)\b/i.test(recentContext)) {
+          } else if (/\b(reflect|mirror|law\s+of\s+reflection)\b/i.test(question) && /\b(light|ray|mirror|angle)\b/i.test(question)) {
             parsed.widgets = [
               {
                 type: 'canvas_diagram',
-                title: 'Reflection of Light on a Plane Mirror',
+                title: 'Animated Reflection of Light on a Plane Mirror',
+                animation: 'light_ray',
                 primitives: [
                   { kind: 'rect', x: 24, y: 162, w: 292, h: 16, color: '#475569', fill: 'rgba(100,116,139,0.22)', strokeWidth: 2 },
                   { kind: 'line', x1: 170, y1: 24, x2: 170, y2: 162, color: '#64748B', dashed: true, strokeWidth: 1.8 },
@@ -442,15 +602,16 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
                   { kind: 'text', x: 76, y: 36, content: 'Incident Ray', color: '#D97706', fontSize: 10.5 },
                   { kind: 'text', x: 266, y: 36, content: 'Reflected Ray', color: '#059669', fontSize: 10.5 },
                 ],
-                caption: 'Law of Reflection: The angle of incidence (i) equals the angle of reflection (r), measured from the normal.',
+                caption: 'Law of Reflection: Angle of incidence (i) = Angle of reflection (r), measured from the normal.',
               },
               ...currentWidgets,
             ];
-          } else if (/\b(echo|sound\s+reflect|reverberation)\b/i.test(recentContext)) {
+          } else if (/\b(echo|sound\s+reflect|reverberation)\b/i.test(question)) {
             parsed.widgets = [
               {
                 type: 'canvas_diagram',
                 title: 'Formation of an Echo (Sound Reflection)',
+                animation: 'light_ray',
                 primitives: [
                   { kind: 'circle', cx: 52, cy: 112, r: 22, color: '#2563EB', fill: 'rgba(37,99,235,0.16)' },
                   { kind: 'text', x: 52, y: 115, content: 'Source', color: '#1D4ED8', fontSize: 10 },
@@ -458,73 +619,61 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
                   { kind: 'text', x: 298, y: 20, content: 'Wall / Cliff', color: '#334155', fontSize: 10 },
                   { kind: 'arrow', x1: 82, y1: 84, x2: 278, y2: 84, color: '#3B82F6', strokeWidth: 2.8 },
                   { kind: 'arc', cx: 92, cy: 84, r: 18, startAngle: -45, endAngle: 45, color: '#3B82F6' },
-                  { kind: 'arc', cx: 110, cy: 84, r: 24, startAngle: -45, endAngle: 45, color: '#60A5FA' },
                   { kind: 'arrow', x1: 278, y1: 140, x2: 82, y2: 140, color: '#EF4444', strokeWidth: 2.8, dashed: true },
                   { kind: 'arc', cx: 266, cy: 140, r: 18, startAngle: 135, endAngle: 225, color: '#EF4444' },
-                  { kind: 'arc', cx: 248, cy: 140, r: 24, startAngle: 135, endAngle: 225, color: '#F87171' },
                   { kind: 'line', x1: 52, y1: 186, x2: 284, y2: 186, color: '#7C3AED', dashed: true, strokeWidth: 1.6 },
                   { kind: 'text', x: 178, y: 66, content: 'Original Sound Wave →', color: '#1D4ED8', fontSize: 10.5 },
                   { kind: 'text', x: 178, y: 162, content: '← Reflected Echo Wave', color: '#DC2626', fontSize: 10.5 },
                   { kind: 'text', x: 168, y: 204, content: 'Distance d = (v × t) / 2', color: '#7C3AED', fontSize: 11 },
                 ],
-                caption: 'Sound travels distance d to the reflecting wall and returns distance d (total 2d), so d = (v × t) / 2.',
+                caption: 'Sound travels distance d to the wall and returns distance d (total 2d), so d = (v × t) / 2.',
               },
               ...currentWidgets,
             ];
-          } else if (/\b(ladder|right[\s-]angled?\s+triangle|pythagor|trigonometr|hypotenuse)\b/i.test(recentContext)) {
-            parsed.widgets = [
-              {
-                type: 'canvas_diagram',
-                title: /\bladder\b/i.test(recentContext)
-                  ? 'Right Triangle Model — Leaning Ladder Problem'
-                  : 'Right-Angled Triangle & Trigonometry',
-                primitives: [
-                  { kind: 'polygon', points: [{ x: 76, y: 176 }, { x: 268, y: 176 }, { x: 76, y: 42 }], color: '#7C3AED', fill: 'rgba(124,92,250,0.12)', strokeWidth: 2.6 },
-                  { kind: 'line', x1: 76, y1: 24, x2: 76, y2: 186, color: '#334155', strokeWidth: 3 },
-                  { kind: 'line', x1: 54, y1: 176, x2: 304, y2: 176, color: '#334155', strokeWidth: 3 },
-                  { kind: 'line', x1: 76, y1: 42, x2: 268, y2: 176, color: '#F97316', strokeWidth: 3.4 },
-                  { kind: 'right_angle', x: 76, y: 176, size: 16, dx: 1, dy: -1, color: '#7C3AED' },
-                  { kind: 'arc', cx: 268, cy: 176, r: 34, startAngle: 180, endAngle: 215, label: 'θ', color: '#EF4444' },
-                  { kind: 'text', x: 44, y: 112, content: 'Height (h)', color: '#1E293B', fontSize: 10.5 },
-                  { kind: 'text', x: 172, y: 198, content: 'Base / Ground (b)', color: '#1E293B', fontSize: 10.5 },
-                  { kind: 'text', x: 204, y: 92, content: /\bladder\b/i.test(recentContext) ? 'Ladder (L)' : 'Hypotenuse (c)', color: '#EA580C', fontSize: 11 },
-                  { kind: 'text', x: 104, y: 162, content: '90°', color: '#7C3AED', fontSize: 9.5 },
-                ],
-                caption: 'Pythagoras: h² + b² = L² · Trig: sin(θ) = h/L, cos(θ) = b/L, tan(θ) = h/b.',
-              },
-              ...currentWidgets,
-            ];
-          } else if (/\b(potential\s+difference|voltage|ohm'?s\s+law|voltmeter|electric\s+circuit|resistor)\b/i.test(recentContext)) {
+          } else if (/\b(potential\s+difference|voltage|ohm'?s\s+law|voltmeter|electric\s+circuit|resistor)\b/i.test(question)) {
             parsed.widgets = [
               {
                 type: 'canvas_diagram',
                 title: 'Electric Circuit — Measuring Potential Difference (V)',
+                animation: 'current_flow',
                 primitives: [
                   { kind: 'rect', x: 56, y: 48, w: 228, h: 118, color: '#334155', fill: 'none', strokeWidth: 2.4 },
-                  // Battery on left
                   { kind: 'rect', x: 40, y: 86, w: 32, h: 42, color: '#F8FBFF', fill: '#F8FBFF', strokeWidth: 0 },
                   { kind: 'line', x1: 42, y1: 98, x2: 70, y2: 98, color: '#EF4444', strokeWidth: 3.2 },
                   { kind: 'line', x1: 49, y1: 112, x2: 63, y2: 112, color: '#1E293B', strokeWidth: 3.2 },
                   { kind: 'text', x: 30, y: 96, content: '+', color: '#EF4444', fontSize: 12 },
                   { kind: 'text', x: 30, y: 120, content: '−', color: '#1E293B', fontSize: 12 },
-                  // Resistor on top
                   { kind: 'rect', x: 132, y: 34, w: 76, h: 28, color: '#7C3AED', fill: '#EDE9FE', strokeWidth: 2.4 },
                   { kind: 'text', x: 170, y: 52, content: 'R', color: '#5B21B6', fontSize: 12 },
-                  // Voltmeter in parallel across R
                   { kind: 'line', x1: 116, y1: 48, x2: 116, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
                   { kind: 'line', x1: 224, y1: 48, x2: 224, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
                   { kind: 'line', x1: 116, y1: 108, x2: 224, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
                   { kind: 'circle', cx: 170, cy: 108, r: 17, color: '#0284C7', fill: '#E0F2FE', strokeWidth: 2.4 },
                   { kind: 'text', x: 170, y: 112, content: 'V', color: '#0369A1', fontSize: 12 },
-                  // Ammeter in series on bottom
                   { kind: 'circle', cx: 170, cy: 166, r: 17, color: '#16A34A', fill: '#DCFCE7', strokeWidth: 2.4 },
                   { kind: 'text', x: 170, y: 170, content: 'A', color: '#15803D', fontSize: 12 },
-                  // Current arrow
                   { kind: 'arrow', x1: 72, y1: 48, x2: 106, y2: 48, color: '#F59E0B', strokeWidth: 2.6 },
                   { kind: 'text', x: 88, y: 34, content: 'Current I', color: '#D97706', fontSize: 10 },
                   { kind: 'text', x: 170, y: 204, content: 'V = I × R  (Voltmeter in Parallel, Ammeter in Series)', color: '#334155', fontSize: 10 },
                 ],
                 caption: 'Potential difference (V) is measured by a voltmeter connected in parallel across resistor R: V = W/Q = I × R.',
+              },
+              ...currentWidgets,
+            ];
+          } else if (/\bquadratic\s+(function|graph|equation|parabola)\b/i.test(question) && !hasType('function_plot')) {
+            parsed.widgets = [
+              {
+                type: 'function_plot',
+                title: 'Quadratic Function Graph: y = x² − 4',
+                expression: 'x^2 - 4',
+                xMin: -5,
+                xMax: 5,
+                points: [
+                  { x: -2, y: 0, label: 'Root (-2,0)' },
+                  { x: 0, y: -4, label: 'Vertex (0,-4)' },
+                  { x: 2, y: 0, label: 'Root (2,0)' },
+                ],
+                caption: 'Interactive parabola y = x² − 4. Edit the equation above or trace points below.',
               },
               ...currentWidgets,
             ];

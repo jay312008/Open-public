@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Modal, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
@@ -13,6 +14,10 @@ import {
   MoleculeAtom,
   MoleculeBond,
 } from './ChemistryAndTableWidgets';
+import { VisualErrorBoundary } from '@/components/visuals/VisualErrorBoundary';
+import { Interactive3DModelWidget, Preset3DModel } from '@/components/visuals/Interactive3DModelWidget';
+import { CodeSandboxModal, DEFAULT_PROJECTILE_CODE } from '@/components/visuals/CodeSandboxModal';
+import { AnimationKind, EDUCATIONAL_ASSETS } from '@/components/visuals/EducationalAssetLibrary';
 
 export type ChatWidgetType =
   | 'function_plot'
@@ -22,7 +27,10 @@ export type ChatWidgetType =
   | 'calculator'
   | 'table'
   | 'periodic_table'
-  | 'molecule';
+  | 'molecule'
+  | 'asset_ref'
+  | 'model_3d'
+  | 'code_sim';
 
 export interface DiagramPrimitive {
   kind: 'line' | 'arrow' | 'polygon' | 'arc' | 'right_angle' | 'circle' | 'rect' | 'path' | 'text';
@@ -72,6 +80,7 @@ export interface ChatWidgetSpec {
   points?: { x: number; y: number; label?: string }[];
   // canvas_diagram
   primitives?: DiagramPrimitive[];
+  animation?: AnimationKind;
   // chart
   labels?: string[];
   values?: number[];
@@ -91,44 +100,137 @@ export interface ChatWidgetSpec {
   atoms?: MoleculeAtom[];
   bonds?: MoleculeBond[];
   shells?: ElectronShellSpec[];
+  // preloaded educational asset library
+  assetId?: string;
+  // interactive 3D model
+  preset3d?: Preset3DModel;
+  // isolated code-based simulation
+  code?: string;
+  codeExplanation?: string;
 }
 
 export function ChatVisualWidget({ widget }: { widget: ChatWidgetSpec }) {
-  switch (widget.type) {
-    case 'function_plot':
-      return <DynamicFunctionPlotWidget widget={widget} />;
-    case 'canvas_diagram':
-      return <DynamicCanvasDiagramWidget widget={widget} />;
-    case 'chart':
-      return <DynamicBarChartWidget widget={widget} />;
-    case 'wave':
-      return <DynamicWaveBoardWidget widget={widget} />;
-    case 'calculator':
-      return <DynamicCalculatorWidget widget={widget} />;
-    case 'table':
-      return (
-        <DynamicDataTableWidget
-          title={widget.title}
-          headers={widget.headers ?? []}
-          rows={widget.rows ?? []}
-          caption={widget.caption}
-        />
-      );
-    case 'periodic_table':
-      return <InteractivePeriodicTableWidget title={widget.title} caption={widget.caption} />;
-    case 'molecule':
-      return (
-        <ChemistryMoleculeWidget
-          title={widget.title}
-          atoms={widget.atoms}
-          bonds={widget.bonds}
-          shells={widget.shells}
-          caption={widget.caption}
-        />
-      );
-    default:
-      return null;
-  }
+  const renderInner = () => {
+    switch (widget.type) {
+      case 'function_plot':
+        return <DynamicFunctionPlotWidget widget={widget} />;
+      case 'canvas_diagram':
+        return <DynamicCanvasDiagramWidget widget={widget} />;
+      case 'asset_ref': {
+        const asset = widget.assetId ? EDUCATIONAL_ASSETS[widget.assetId] : undefined;
+        if (!asset) return null;
+        return (
+          <DynamicCanvasDiagramWidget
+            widget={{
+              type: 'canvas_diagram',
+              title: widget.title ?? asset.name,
+              caption: widget.caption ?? `${asset.description} (${asset.license})`,
+              primitives: asset.primitives,
+              animation: widget.animation ?? asset.animationKind,
+            }}
+          />
+        );
+      }
+      case 'model_3d':
+        return (
+          <Interactive3DModelWidget
+            preset={widget.preset3d ?? 'water_h2o'}
+            title={widget.title}
+            caption={widget.caption}
+          />
+        );
+      case 'code_sim':
+        return <CodeSimulationCardWidget widget={widget} />;
+      case 'chart':
+        return <DynamicBarChartWidget widget={widget} />;
+      case 'wave':
+        return <DynamicWaveBoardWidget widget={widget} />;
+      case 'calculator':
+        return <DynamicCalculatorWidget widget={widget} />;
+      case 'table':
+        return (
+          <DynamicDataTableWidget
+            title={widget.title}
+            headers={widget.headers ?? []}
+            rows={widget.rows ?? []}
+            caption={widget.caption}
+          />
+        );
+      case 'periodic_table':
+        return <InteractivePeriodicTableWidget title={widget.title} caption={widget.caption} />;
+      case 'molecule':
+        return (
+          <ChemistryMoleculeWidget
+            title={widget.title}
+            atoms={widget.atoms}
+            bonds={widget.bonds}
+            shells={widget.shells}
+            caption={widget.caption}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <VisualErrorBoundary title={widget.title}>
+      {renderInner()}
+    </VisualErrorBoundary>
+  );
+}
+
+function CodeSimulationCardWidget({ widget }: { widget: ChatWidgetSpec }) {
+  const { colors, isDark } = useTheme();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <View
+      style={[
+        styles.boardWrap,
+        { backgroundColor: isDark ? '#16201C' : '#F8FBFF', borderColor: colors.border },
+      ]}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+          <Ionicons name="code-slash" size={18} color={colors.coral} />
+          <Text style={[styles.boardTitle, { color: colors.text, textAlign: 'left', flex: 1 }]}>
+            {widget.title ?? 'Interactive Code Simulation'}
+          </Text>
+        </View>
+        <View style={[styles.miniPill, { backgroundColor: colors.surfacePurpleSoft }]}>
+          <Text style={{ color: colors.purple, fontSize: 10, fontWeight: '800' }}>Sandbox</Text>
+        </View>
+      </View>
+      <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 19 }}>
+        {widget.caption ?? 'Run this live interactive simulation, tweak parameters (velocity, angle, variables), and inspect the code safely inside the isolated sandbox.'}
+      </Text>
+      <AnimatedPressable
+        onPress={() => setOpen(true)}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 7,
+          backgroundColor: colors.coral,
+          paddingVertical: 11,
+          borderRadius: 999,
+        }}
+      >
+        <Ionicons name="play" size={15} color="#FFFFFF" />
+        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 }}>
+          Launch Live Simulation & Code Editor
+        </Text>
+      </AnimatedPressable>
+      <CodeSandboxModal
+        visible={open}
+        onClose={() => setOpen(false)}
+        initialTitle={widget.title ?? 'Interactive Simulation'}
+        initialCode={widget.code ?? DEFAULT_PROJECTILE_CODE}
+        explanation={widget.codeExplanation ?? widget.caption}
+      />
+    </View>
+  );
 }
 
 /* 1. DYNAMIC MATH FUNCTION PLOTTER — plots ANY equation (linear, quadratic, trig, cubic, exp, etc.) + live coordinate tracer! */
@@ -475,16 +577,36 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
   });
 
   const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.055)';
+  const hasAnim = Boolean(widget.animation && widget.animation !== 'none');
+  const [showLabels, setShowLabels] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [playing, setPlaying] = useState(hasAnim);
+  const [speed, setSpeed] = useState<0.5 | 1 | 2>(1);
+  const [animT, setAnimT] = useState(0);
 
-  return (
-    <View
-      style={[
-        styles.boardWrap,
-        { backgroundColor: isDark ? '#16201C' : '#F8FBFF', borderColor: colors.border },
-      ]}
-    >
-      {widget.title && <Text style={[styles.boardTitle, { color: colors.text }]}>{widget.title}</Text>}
-      <Svg width="100%" height={svgHeight} viewBox={`0 0 ${W} ${H}`}>
+  useEffect(() => {
+    if (!hasAnim || !playing) return;
+    const id = setInterval(() => {
+      setAnimT((prev) => (prev + 0.025 * speed) % 1);
+    }, 45);
+    return () => clearInterval(id);
+  }, [hasAnim, playing, speed]);
+
+  // Compute animated marker overlay along the primary arrows of the diagram
+  const animArrows = useMemo(
+    () => primitives.filter((p) => p.kind === 'arrow' && p.x1 != null && p.x2 != null),
+    [primitives]
+  );
+
+  const renderCanvasSvg = (heightVal: number) => {
+    const vbW = W / zoom;
+    const vbH = H / zoom;
+    const vbX = (W - vbW) / 2;
+    const vbY = (H - vbH) / 2;
+
+    return (
+      <Svg width="100%" height={heightVal} viewBox={`${vbX.toFixed(1)} ${vbY.toFixed(1)} ${vbW.toFixed(1)} ${vbH.toFixed(1)}`}>
         {/* Subtle scientific blueprint grid */}
         {Array.from({ length: Math.floor(W / 32) }, (_, i) => (
           <Line
@@ -603,7 +725,7 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
                   fill="none"
                   strokeLinecap="round"
                 />
-                {p.label && (
+                {showLabels && p.label && (
                   <SvgText
                     x={lx}
                     y={ly}
@@ -685,7 +807,7 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
             );
           }
 
-          if (p.kind === 'text' && p.content) {
+          if (p.kind === 'text' && p.content && showLabels) {
             const pos = resolvedTextPos.get(idx) ?? { x: p.x ?? W / 2, y: p.y ?? 20 };
             return (
               <SvgText
@@ -703,8 +825,117 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
           }
           return null;
         })}
+
+        {/* Animated Photon / Current / Blood / Force Pulses traveling cleanly along vector arrows */}
+        {hasAnim &&
+          animArrows.slice(0, 4).map((ar, aIdx) => {
+            const localT = (animT + aIdx * 0.25) % 1;
+            const px = (ar.x1 ?? 0) + ((ar.x2 ?? 0) - (ar.x1 ?? 0)) * localT;
+            const py = (ar.y1 ?? 0) + ((ar.y2 ?? 0) - (ar.y1 ?? 0)) * localT;
+            return (
+              <React.Fragment key={`anim-${aIdx}`}>
+                <Circle cx={px} cy={py} r={7.5} fill={ar.color || '#FF6B4A'} opacity={0.28} />
+                <Circle cx={px} cy={py} r={4.2} fill={ar.color || '#FF6B4A'} stroke="#FFFFFF" strokeWidth={1.3} />
+              </React.Fragment>
+            );
+          })}
       </Svg>
+    );
+  };
+
+  return (
+    <View
+      style={[
+        styles.boardWrap,
+        { backgroundColor: isDark ? '#16201C' : '#F8FBFF', borderColor: colors.border },
+      ]}
+    >
+      {/* Header Toolbar: Title + Labels Toggle + Zoom + Fullscreen */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+        <Text style={[styles.boardTitle, { color: colors.text, textAlign: 'left', flex: 1 }]} numberOfLines={2}>
+          {widget.title ?? 'Scientific Diagram'}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <AnimatedPressable
+            onPress={() => setShowLabels((v) => !v)}
+            style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
+          >
+            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.text }}>
+              {showLabels ? 'Labels' : 'Hidden'}
+            </Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={() => setZoom((z) => (z >= 1.4 ? 1 : Number((z + 0.2).toFixed(1))))}
+            style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
+          >
+            <Ionicons name="search-outline" size={12} color={colors.text} />
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={() => setFullscreen(true)}
+            style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
+          >
+            <Ionicons name="expand-outline" size={12} color={colors.text} />
+          </AnimatedPressable>
+        </View>
+      </View>
+
+      {renderCanvasSvg(svgHeight)}
+
+      {/* Animation Playback Bar (Play/Pause, Replay, Speed) */}
+      {hasAnim && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <AnimatedPressable
+            onPress={() => setPlaying((p) => !p)}
+            style={[styles.miniPill, { backgroundColor: playing ? colors.coral : colors.surfaceMuted, flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+          >
+            <Ionicons name={playing ? 'pause' : 'play'} size={12} color={playing ? '#FFFFFF' : colors.text} />
+            <Text style={{ fontSize: 10.5, fontWeight: '800', color: playing ? '#FFFFFF' : colors.text }}>
+              {playing ? 'Pause' : 'Play'}
+            </Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={() => {
+              setAnimT(0);
+              setPlaying(true);
+            }}
+            style={[styles.miniPill, { backgroundColor: colors.surfaceMuted, flexDirection: 'row', alignItems: 'center', gap: 3 }]}
+          >
+            <Ionicons name="refresh" size={12} color={colors.text} />
+            <Text style={{ fontSize: 10.5, fontWeight: '700', color: colors.text }}>Replay</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={() => setSpeed((s) => (s === 0.5 ? 1 : s === 1 ? 2 : 0.5))}
+            style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
+          >
+            <Text style={{ fontSize: 10.5, fontWeight: '800', color: colors.purple }}>{speed}x</Text>
+          </AnimatedPressable>
+        </View>
+      )}
+
       {widget.caption && <Text style={[styles.caption, { color: colors.purple }]}>{widget.caption}</Text>}
+
+      {/* Fullscreen Enlarged Viewer */}
+      <Modal visible={fullscreen} animationType="fade" onRequestClose={() => setFullscreen(false)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#111815' : '#F8FBFF', padding: 16, justifyContent: 'center', gap: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ color: colors.text, fontSize: 17, fontWeight: '900', flex: 1 }}>
+              {widget.title ?? 'Scientific Diagram'}
+            </Text>
+            <AnimatedPressable
+              onPress={() => setFullscreen(false)}
+              style={[styles.miniPill, { backgroundColor: colors.coral, paddingHorizontal: 14, paddingVertical: 7 }]}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>Close</Text>
+            </AnimatedPressable>
+          </View>
+          {renderCanvasSvg(340)}
+          {widget.caption && (
+            <Text style={{ color: colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+              {widget.caption}
+            </Text>
+          )}
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
