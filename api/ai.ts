@@ -611,33 +611,37 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       const topic = String(body.topic ?? 'Core Topic');
       const mode = String(body.mode ?? 'initial'); // 'initial' | 'continue'
       const previousSections = Array.isArray(body.previousSections)
-        ? body.previousSections.map(String).slice(0, 25)
+        ? body.previousSections.map(String).slice(0, 30)
         : [];
       const reply = await callNvidia(
         [
           {
             role: 'system',
             content:
-              'You are a master Cameroon GCE & University teacher creating complete, classroom-ready digital textbook notes. NEVER use LaTeX backslashes (no \\frac, \\rightarrow, \\neq, no $ signs) — use clean Unicode (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). For any math/science worked example, use the clear 9-step presentation (Question, Known values, Required, Formula, Variables, Substitution, Calculation step-by-step on separate lines, Final Answer with unit, Interpretation). Return ONLY raw valid JSON with schema: { "title": string, "introduction": string, "objectives": string[], "keyTerms": [{ "term": string, "definition": string }], "sections": [{ "heading": string, "body": string }], "workedExample": string, "commonMistakes": string, "examTip": string, "summaryPoints": string[], "exercises": [{ "question": string, "solution": string }], "widgets"?: Widget[] }. Include a dynamic visual widget (function_plot, wave, canvas_diagram, chart, or calculator) whenever the topic benefits from visual learning (e.g. Waves, Functions, Forces, Circuits, Cells, Bonding).',
+              'You are a senior Cameroon GCE & University textbook author writing FULL, EXHAUSTIVE, classroom-grade lecture notes — NOT short summaries. Write at the depth of a real multi-page school textbook chapter (aim for 1,600 to 2,500+ words total). NEVER use LaTeX backslashes (no \\frac, \\rightarrow, \\neq, no $ signs) — use clean Unicode (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). Put every formula and equation step on its own clean line. For worked examples, show 2 complete step-by-step worked examples (Problem, Known values, Required, Formula, Substitution, Line-by-line Calculation, Final Answer with units, Interpretation). Return ONLY raw valid JSON with schema: { "title": string, "introduction": string, "objectives": string[], "keyTerms": [{ "term": string, "definition": string }], "sections": [{ "heading": string, "body": string }], "workedExample": string, "commonMistakes": string, "examTip": string, "summaryPoints": string[], "exercises": [{ "question": string, "solution": string }], "widgets"?: Widget[] }. Include a relevant visual widget (table, canvas_diagram on 340x220 canvas, molecule, wave, chart, or valid single-variable x function_plot) whenever helpful.',
           },
           {
             role: 'user',
             content:
               mode === 'continue'
-                ? `Write the NEXT continuation part of the ${level} ${subject} lesson on "${topic}". STRICTLY DO NOT repeat any of these already-covered sections: [${previousSections.join(', ')}]. Teach brand-new subtopics, deeper exam applications, a fresh 9-step worked example, and 2 new practice exercises.`
-                : `Write a complete, thorough ${level} ${subject} classroom lesson on "${topic}" aligned strictly to ${level} depth (never mix O-Level and A-Level). Include introduction, 3 learning objectives, 3-4 key terms, 3-4 detailed subtopic sections, a clear 9-step worked example (if applicable) or real-world demonstration, common mistakes, summary points, and 2 practice exercises with solutions.`,
+                ? `Write the NEXT FULL MULTI-PAGE CONTINUATION CHAPTER of the ${level} ${subject} textbook notes on "${topic}". STRICTLY DO NOT repeat any of these already-covered sections: [${previousSections.join(', ')}]. Include: a 2-paragraph bridge introduction, 4 new objectives, 5 new key terms, 5 to 6 brand-new deeply explained subtopic sections (each section MUST be 3 full detailed paragraphs with real-world examples and formulas — NO short 2-sentence paragraphs!), 2 fresh full step-by-step worked examples, examiner mistakes, 6 summary points, and 4 new exam-standard practice exercises with full solutions.`
+                : `Write COMPLETE, FULL-LENGTH, MULTI-PAGE ${level} ${subject} school textbook notes on "${topic}" aligned strictly to ${level} syllabus depth (never mix O-Level and A-Level). Requirements: (1) Rich 3-paragraph introduction explaining background, significance, and exam relevance; (2) 5-6 measurable learning objectives; (3) 6-8 thorough key terms & definitions; (4) 6 to 8 comprehensive subtopic sections where EVERY section has 3-4 well-developed paragraphs (at least 150-220 words per section!) with clear explanations, everyday real-world examples, comparisons, and formulas on separate lines; (5) 2 complete 9-step worked examples; (6) detailed common mistakes & examiner warnings; (7) high-yield exam tip; (8) 6-8 summary points; (9) 5 practice exercises (Foundation to GCE Exam level) with complete step-by-step solutions.`,
           },
         ],
-        2000,
+        5200,
         true
       );
       const cleaned = reply
         .replace(/^```(?:json)?\s*/i, '')
         .replace(/```$/i, '')
-        .trim()
+        .trim();
+      const firstB = cleaned.indexOf('{');
+      const lastB = cleaned.lastIndexOf('}');
+      const slice = firstB >= 0 && lastB > firstB ? cleaned.slice(firstB, lastB + 1) : cleaned;
+      const repaired = slice
         .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
         .replace(/,\s*([}\]])/g, '$1');
-      res.status(200).json(JSON.parse(cleaned));
+      res.status(200).json(JSON.parse(repaired));
       return;
     }
 

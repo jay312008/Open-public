@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Image,
   ImageSourcePropType,
@@ -10,9 +10,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
@@ -103,6 +104,20 @@ export default function SubjectsScreen() {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [customModalOpen, setCustomModalOpen] = useState(false);
+  const [savedNoteIds, setSavedNoteIds] = useState<string[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem('@learnymol_saved_note_ids_v1')
+        .then((raw) => {
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) setSavedNoteIds(parsed);
+          }
+        })
+        .catch(() => {});
+    }, [])
+  );
   const [customTitle, setCustomTitle] = useState('');
   const [customDesc, setCustomDesc] = useState('');
 
@@ -410,6 +425,7 @@ export default function SubjectsScreen() {
                   <View style={styles.lessonList}>
                     {topic.lessons.map((lesson, idx) => {
                       const done = completedLessonIds.includes(lesson.id);
+                      const hasSavedNotes = savedNoteIds.includes(lesson.id);
                       return (
                         <AnimatedPressable
                           key={lesson.id}
@@ -420,9 +436,9 @@ export default function SubjectsScreen() {
                           ]}
                         >
                           <Ionicons
-                            name={done ? 'checkmark-circle' : 'play-circle-outline'}
+                            name={done ? 'checkmark-circle' : hasSavedNotes ? 'document-text' : 'play-circle-outline'}
                             size={20}
-                            color={done ? colors.brandGreen : colors.coral}
+                            color={done || hasSavedNotes ? colors.brandGreen : colors.coral}
                           />
                           <Text
                             style={[styles.lessonTitle, { color: colors.text }]}
@@ -430,6 +446,20 @@ export default function SubjectsScreen() {
                           >
                             {idx + 1}. {lesson.title}
                           </Text>
+                          {hasSavedNotes && (
+                            <View
+                              style={{
+                                backgroundColor: colors.surfaceMint,
+                                paddingHorizontal: 8,
+                                paddingVertical: 2,
+                                borderRadius: 999,
+                              }}
+                            >
+                              <Text style={{ color: colors.mintDark, fontSize: 10.5, fontWeight: '800' }}>
+                                Saved
+                              </Text>
+                            </View>
+                          )}
                           <Text style={[styles.lessonDur, { color: colors.textMuted }]}>
                             {lesson.durationMinutes}m
                           </Text>
