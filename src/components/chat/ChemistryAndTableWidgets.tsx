@@ -16,9 +16,35 @@ export interface TableWidgetProps {
 
 export function DynamicDataTableWidget({ title, headers, rows, caption }: TableWidgetProps) {
   const { colors, isDark } = useTheme();
-  if (!headers?.length && !rows?.length) return null;
+  const rawRows: unknown[] = Array.isArray(rows) ? rows : [];
+  let safeHeaders: string[] = Array.isArray(headers) ? headers.map((h) => String(h ?? '')) : [];
 
-  const colCount = Math.max(headers.length, ...rows.map((r) => r.length));
+  if (safeHeaders.length === 0 && rawRows.length > 0 && rawRows[0] && typeof rawRows[0] === 'object' && !Array.isArray(rawRows[0])) {
+    safeHeaders = Object.keys(rawRows[0] as Record<string, unknown>);
+  }
+
+  const safeRows: string[][] = rawRows
+    .map((r) => {
+      if (Array.isArray(r)) return r.map((v) => String(v ?? ''));
+      if (r && typeof r === 'object') {
+        const obj = r as Record<string, unknown>;
+        if (safeHeaders.length > 0) {
+          return safeHeaders.map((h) => {
+            if (h in obj) return String(obj[h] ?? '');
+            const keyMatch = Object.keys(obj).find((k) => k.toLowerCase() === h.toLowerCase());
+            return keyMatch ? String(obj[keyMatch] ?? '') : '';
+          });
+        }
+        return Object.values(obj).map((v) => String(v ?? ''));
+      }
+      if (r != null) return [String(r)];
+      return [];
+    })
+    .filter((r) => r.length > 0);
+
+  if (!safeHeaders.length && !safeRows.length) return null;
+
+  const colCount = Math.max(1, safeHeaders.length, ...safeRows.map((r) => r.length));
   const minColWidth = colCount <= 3 ? 96 : 112;
 
   return (
@@ -31,15 +57,15 @@ export function DynamicDataTableWidget({ title, headers, rows, caption }: TableW
       {title && <Text style={[styles.title, { color: colors.text }]}>{title}</Text>}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={[styles.tableBorder, { borderColor: colors.border }]}>
-          {headers.length > 0 && (
+          {safeHeaders.length > 0 && (
             <View style={[styles.tr, { backgroundColor: colors.mintDark }]}>
-              {headers.map((h, i) => (
+              {safeHeaders.map((h, i) => (
                 <View
                   key={i}
                   style={[
                     styles.cell,
                     { minWidth: minColWidth, borderRightColor: 'rgba(255,255,255,0.2)' },
-                    i < headers.length - 1 && styles.cellRightBorder,
+                    i < safeHeaders.length - 1 && styles.cellRightBorder,
                   ]}
                 >
                   <Text style={styles.thText}>{h}</Text>
@@ -47,7 +73,7 @@ export function DynamicDataTableWidget({ title, headers, rows, caption }: TableW
               ))}
             </View>
           )}
-          {rows.map((row, rIdx) => (
+          {safeRows.map((row, rIdx) => (
             <View
               key={rIdx}
               style={[
@@ -66,16 +92,16 @@ export function DynamicDataTableWidget({ title, headers, rows, caption }: TableW
                 },
               ]}
             >
-              {row.map((val, cIdx) => (
+              {Array.from({ length: colCount }, (_, cIdx) => (
                 <View
                   key={cIdx}
                   style={[
                     styles.cell,
                     { minWidth: minColWidth, borderRightColor: colors.borderSubtle },
-                    cIdx < row.length - 1 && styles.cellRightBorder,
+                    cIdx < colCount - 1 && styles.cellRightBorder,
                   ]}
                 >
-                  <Text style={[styles.tdText, { color: colors.text }]}>{String(val ?? '')}</Text>
+                  <Text style={[styles.tdText, { color: colors.text }]}>{row[cIdx] ?? ''}</Text>
                 </View>
               ))}
             </View>

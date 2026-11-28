@@ -189,6 +189,8 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             .replace(/\\([a-zA-Z]+)/g, '')
             .replace(/\^2\b/g, '²')
             .replace(/\^3\b/g, '³')
+            .replace(/\*\*([^*]+)\*\*/g, '$1')
+            .replace(/\*([^*\n]+)\*/g, '$1')
             .replace(/\$/g, '')
             .replace(/\\n/g, '\n')
             .trim();

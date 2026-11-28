@@ -531,9 +531,6 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
       return true;
     });
 
-  // Never render a blank empty grid if there are no drawable primitives!
-  if (primitives.length === 0) return null;
-
   // Auto-detect coordinate space (340x220 new scientific canvas vs legacy 264x160)
   let maxX = 0;
   let maxY = 0;
@@ -598,6 +595,9 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
     () => primitives.filter((p) => p.kind === 'arrow' && p.x1 != null && p.x2 != null),
     [primitives]
   );
+
+  // Never render a blank empty grid if there are no drawable primitives! (Checked AFTER all hooks)
+  if (primitives.length === 0) return null;
 
   const renderCanvasSvg = (heightVal: number) => {
     const vbW = W / zoom;
