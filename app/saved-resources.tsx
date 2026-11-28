@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
@@ -12,7 +13,8 @@ type FilterTab = 'all' | 'ask-molly' | 'live-teacher' | 'quizzes';
 
 export default function SavedResourcesScreen() {
   const { colors } = useTheme();
-  const { conversations, quizHistory } = useApp();
+  const router = useRouter();
+  const { conversations, quizHistory, learningMemory } = useApp();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterTab>('all');
 
@@ -41,8 +43,42 @@ export default function SavedResourcesScreen() {
   return (
     <AppBackground>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <BrandHeader showBack title="Saved Resources" />
+        <BrandHeader showBack title="Saved & History" />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {/* Knowledge Gap Radar (Master Blueprint Part 29.5) */}
+          <View style={[styles.radarCard, { backgroundColor: colors.surface, borderColor: colors.coral }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="pulse" size={19} color={colors.coral} />
+              <Text style={[styles.title, { color: colors.text }]}>Knowledge Gap Radar</Text>
+            </View>
+            {learningMemory.weakTopics.length === 0 ? (
+              <Text style={{ color: colors.textSecondary, fontSize: 12.5, lineHeight: 18 }}>
+                No weak spots flagged yet! Complete quizzes and exercises — Molly will automatically highlight topics you should revise here.
+              </Text>
+            ) : (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {learningMemory.weakTopics.map((topic) => (
+                  <AnimatedPressable
+                    key={topic}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/tools/ask-molly',
+                        params: {
+                          initialQuestion: `Help me master my weak topic "${topic}" step by step with a quick check question.`,
+                        },
+                      })
+                    }
+                    style={[styles.radarChip, { backgroundColor: 'rgba(255, 107, 74, 0.14)' }]}
+                  >
+                    <Text style={{ color: colors.coral, fontSize: 12, fontWeight: '800' }}>
+                      🎯 Fix: {topic}
+                    </Text>
+                  </AnimatedPressable>
+                ))}
+              </View>
+            )}
+          </View>
+
           {/* Search Bar */}
           <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Ionicons name="search" size={18} color={colors.textMuted} />
@@ -129,6 +165,23 @@ export default function SavedResourcesScreen() {
                     {c.messages.length} messages
                     {c.messages[c.messages.length - 1]?.text ? ` · ${c.messages[c.messages.length - 1].text}` : ''}
                   </Text>
+                  <AnimatedPressable
+                    onPress={() =>
+                      router.push(
+                        c.tool === 'live-teacher'
+                          ? ('/tools/live-teacher' as never)
+                          : ({
+                              pathname: '/tools/ask-molly',
+                              params: { initialQuestion: `Continue our discussion on: ${c.title}` },
+                            } as never)
+                      )
+                    }
+                    style={[styles.resumeBtn, { backgroundColor: colors.surfaceMint }]}
+                  >
+                    <Text style={{ color: colors.mintDark, fontSize: 12, fontWeight: '800' }}>
+                      Resume Session →
+                    </Text>
+                  </AnimatedPressable>
                 </View>
               ))}
 
@@ -165,6 +218,8 @@ export default function SavedResourcesScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { paddingHorizontal: 18, paddingBottom: 40, gap: 12 },
+  radarCard: { borderRadius: 20, borderWidth: 1.5, padding: 15, gap: 8 },
+  radarChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -184,5 +239,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 15, fontWeight: '800' },
   sub: { fontSize: 12.5, textAlign: 'center' },
   cardSub: { fontSize: 12.5, lineHeight: 18 },
+  resumeBtn: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginTop: 2 },
   quizRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 });

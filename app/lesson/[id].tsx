@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -8,13 +8,20 @@ import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
+import {
+  EssayGradeResult,
+  GeneratedTopicNotes,
+  generateFlashcardsAPI,
+  generateTopicNotesAPI,
+  gradeEssayAnswerAPI,
+} from '@/lib/aiGateway';
 
 type LessonTab = 'notes' | 'flashcards' | 'exercise';
 
 export default function LessonViewerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { subjects, completedLessonIds, completeJourneyLesson } = useApp();
+  const { subjects, completedLessonIds, completeJourneyLesson, logStudyActivity, consumeCredits } = useApp();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<LessonTab>('notes');
@@ -23,7 +30,14 @@ export default function LessonViewerScreen() {
   const [flipped, setFlipped] = useState(false);
   const [masteredCards, setMasteredCards] = useState<number[]>([]);
   const [exerciseAnswer, setExerciseAnswer] = useState('');
-  const [exerciseSubmitted, setExerciseSubmitted] = useState(false);
+
+  // Part 6.4–6.7 Live AI Notes (with Continue append), 10/20 Flashcards, and AI Essay Grader
+  const [aiNoteBlocks, setAiNoteBlocks] = useState<GeneratedTopicNotes[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+  const [customFlashcards, setCustomFlashcards] = useState<{ front: string; back: string }[] | null>(null);
+  const [loadingCards, setLoadingCards] = useState(false);
+  const [gradingEssay, setGradingEssay] = useState(false);
+  const [essayGrade, setEssayGrade] = useState<EssayGradeResult | null>(null);
 
   const match = subjects
     .flatMap((s) =>
@@ -31,7 +45,7 @@ export default function LessonViewerScreen() {
     )
     .find((item) => item.lesson.id === id);
 
-  const flashcards = useMemo(() => {
+  const defaultFlashcards = useMemo(() => {
     if (!match) return [];
     const { lesson, topic } = match;
     const cards: { front: string; back: string }[] = [
@@ -50,6 +64,8 @@ export default function LessonViewerScreen() {
     return cards;
   }, [match]);
 
+  const flashcards = customFlashcards ?? defaultFlashcards;
+
   if (!match) {
     return (
       <AppBackground>
@@ -65,9 +81,11 @@ export default function LessonViewerScreen() {
 
   const { subject, topic, lesson } = match;
   const isCompleted = completedLessonIds.includes(lesson.id);
+  const currentCard = flashcards[cardIndex] ?? flashcards[0];
 
   const handleComplete = () => {
     const res = completeJourneyLesson(lesson.id);
+    logStudyActivity(`Completed lesson: ${subject.name} — ${lesson.title}`);
     if (res.alreadyCompleted) {
       Alert.alert('Already Completed', 'You already earned XP for this lesson.');
     } else {
@@ -78,14 +96,62 @@ export default function LessonViewerScreen() {
     }
   };
 
-  const currentCard = flashcards[cardIndex];
+  const handleGenerateNotes = async (mode: 'initial' | 'continue') => {
+    if (loadingNotes) return;
+    setLoadingNotes(true);
+    consumeCredits(1, `AI Notes: ${lesson.title}`, 'ai-chat');
+    logStudyActivity(`Generated AI Notes for ${subject.name} — ${lesson.title}`);
+    try {
+      const res = await generateTopicNotesAPI({
+        subject: subject.name,
+        level: subject.level,
+        topic: `${topic.title}: ${lesson.title}`,
+        mode,
+      });
+      setAiNoteBlocks((prev) => [...prev, res.data]);
+    } finally {
+      setLoadingNotes(false);
+    }
+  };
 
-  const handleSubmitExercise = () => {
-    if (exerciseAnswer.trim().length < 8) {
-      Alert.alert('Write a bit more', 'Enter at least a short explanation to submit your exercise.');
+  const handleGenerateFlashcards = async (count: 10 | 20) => {
+    if (loadingCards) return;
+    setLoadingCards(true);
+    consumeCredits(1, `AI Flashcards (${count}): ${topic.title}`, 'quiz');
+    try {
+      const res = await generateFlashcardsAPI({
+        subject: subject.name,
+        topic: `${topic.title} — ${lesson.title}`,
+        count,
+      });
+      setCustomFlashcards(res.data);
+      setCardIndex(0);
+      setFlipped(false);
+      setMasteredCards([]);
+    } finally {
+      setLoadingCards(false);
+    }
+  };
+
+  const handleSubmitExercise = async () => {
+    if (exerciseAnswer.trim().length < 10) {
+      Alert.alert('Write a bit more', 'Enter at least a short explanation so Molly can mark it fairly.');
       return;
     }
-    setExerciseSubmitted(true);
+    if (gradingEssay) return;
+    setGradingEssay(true);
+    consumeCredits(1, `AI Essay Grading: ${topic.title}`, 'quiz');
+    logStudyActivity(`Submitted written exercise: ${subject.name} — ${topic.title}`);
+    try {
+      const res = await gradeEssayAnswerAPI({
+        subject: subject.name,
+        topic: `${topic.title} — ${lesson.title}`,
+        answer: exerciseAnswer,
+      });
+      setEssayGrade(res.data);
+    } finally {
+      setGradingEssay(false);
+    }
   };
 
   return (
@@ -93,12 +159,12 @@ export default function LessonViewerScreen() {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <BrandHeader showBack title={topic.title} />
 
-        {/* 3 Clean Lesson Mode Tabs: Notes | Flashcards | Exercise (Master Blueprint Part 6) */}
+        {/* 3 Clean Lesson Mode Tabs: Notes | Flashcards | Exercise */}
         <View style={styles.tabRow}>
           {(
             [
               { id: 'notes', label: 'Notes', icon: 'document-text-outline' },
-              { id: 'flashcards', label: `Flashcards (${flashcards.length})`, icon: 'albums-outline' },
+              { id: 'flashcards', label: `Cards (${flashcards.length})`, icon: 'albums-outline' },
               { id: 'exercise', label: 'Exercise', icon: 'create-outline' },
             ] as const
           ).map((t) => {
@@ -160,94 +226,170 @@ export default function LessonViewerScreen() {
               )}
 
               <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.cardHeading, { color: colors.text }]}>Key Takeaways</Text>
-                {lesson.keyPoints.map((pt, i) => (
-                  <View key={i} style={styles.bulletRow}>
-                    <Ionicons name="checkmark-circle" size={18} color={colors.mint} />
-                    <Text style={[styles.bulletText, { color: colors.textSecondary }]}>{pt}</Text>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Key Study Points</Text>
+                {lesson.keyPoints.map((kp, i) => (
+                  <View key={i} style={styles.kpRow}>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.mintDark} />
+                    <Text style={[styles.kpText, { color: colors.text }]}>{kp}</Text>
                   </View>
                 ))}
               </View>
+
+              {/* AI-Generated Extended Notes + Continue (Append) — Part 6.4 & 6.5 */}
+              {aiNoteBlocks.map((block, bIdx) => (
+                <View
+                  key={bIdx}
+                  style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.purple }]}
+                >
+                  <Text style={[styles.eqLabel, { color: colors.purple }]}>
+                    {bIdx === 0 ? 'AI SYLLABUS NOTES' : `DEEPER EXPLANATION #${bIdx + 1}`}
+                  </Text>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>{block.title}</Text>
+                  {block.sections.map((sec, sIdx) => (
+                    <View key={sIdx} style={{ gap: 3 }}>
+                      <Text style={{ color: colors.text, fontSize: 13.5, fontWeight: '800' }}>
+                        {sec.heading}
+                      </Text>
+                      <Text style={{ color: colors.textSecondary, fontSize: 13.5, lineHeight: 20 }}>
+                        {sec.body}
+                      </Text>
+                    </View>
+                  ))}
+                  {block.workedExample ? (
+                    <View style={[styles.tipBox, { backgroundColor: colors.surfacePurpleSoft }]}>
+                      <Text style={{ color: colors.purple, fontSize: 12.5, fontWeight: '800' }}>
+                        Worked Example: {block.workedExample}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {block.examTip ? (
+                    <View style={[styles.tipBox, { backgroundColor: colors.surfaceMint }]}>
+                      <Text style={{ color: colors.mintDark, fontSize: 12.5, fontWeight: '700' }}>
+                        💡 Exam Tip: {block.examTip}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ))}
+
+              <AnimatedPressable
+                onPress={() => handleGenerateNotes(aiNoteBlocks.length === 0 ? 'initial' : 'continue')}
+                style={[styles.aiBtn, { backgroundColor: colors.purple }]}
+              >
+                {loadingNotes ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles" size={16} color="#FFFFFF" />
+                    <Text style={styles.ctaText}>
+                      {aiNoteBlocks.length === 0
+                        ? 'Generate Full AI Exam Notes'
+                        : 'Continue — Explain Deeper (Keep Previous)'}
+                    </Text>
+                  </>
+                )}
+              </AnimatedPressable>
 
               <AnimatedPressable
                 onPress={() =>
                   router.push({
                     pathname: '/tools/ask-molly',
-                    params: { initialQuestion: `Explain "${lesson.title}" in ${subject.name} step by step` },
+                    params: {
+                      initialQuestion: `Explain "${lesson.title}" (${subject.name}) with a worked example.`,
+                    },
                   })
                 }
-                style={[
-                  styles.mollyBtn,
-                  { backgroundColor: colors.surfaceMint, borderColor: colors.mint },
-                ]}
+                style={[styles.secondaryBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
               >
-                <Ionicons name="chatbubble-ellipses" size={18} color={colors.mintDark} />
-                <Text style={[styles.mollyBtnText, { color: colors.mintDark }]}>
-                  Ask Molly to explain this lesson
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.coral} />
+                <Text style={{ color: colors.text, fontWeight: '800', fontSize: 13.5 }}>
+                  Ask Molly About This Lesson
                 </Text>
               </AnimatedPressable>
             </>
           )}
 
-          {activeTab === 'flashcards' && currentCard && (
+          {activeTab === 'flashcards' && (
             <View style={{ gap: 12 }}>
-              <Text style={[styles.cardMeta, { color: colors.textSecondary }]}>
-                Card {cardIndex + 1} of {flashcards.length} · Mastered: {masteredCards.length}/{flashcards.length}
-              </Text>
-
-              <AnimatedPressable
-                onPress={() => setFlipped((f) => !f)}
-                style={[
-                  styles.flashcard,
-                  {
-                    backgroundColor: flipped ? colors.surfaceMint : colors.surface,
-                    borderColor: flipped ? colors.mint : colors.border,
-                  },
-                ]}
-              >
-                <Text style={[styles.flashSideTag, { color: flipped ? colors.mintDark : colors.purple }]}>
-                  {flipped ? 'ANSWER · TAP TO FLIP BACK' : 'PROMPT · TAP TO REVEAL ANSWER'}
-                </Text>
-                <Text style={[styles.flashBody, { color: colors.text }]}>
-                  {flipped ? currentCard.back : currentCard.front}
-                </Text>
-              </AnimatedPressable>
-
-              <View style={styles.flashActions}>
-                <AnimatedPressable
-                  onPress={() => {
-                    setFlipped(false);
-                    setCardIndex((i) => (i - 1 + flashcards.length) % flashcards.length);
-                  }}
-                  style={[styles.flashBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                >
-                  <Ionicons name="chevron-back" size={18} color={colors.text} />
-                  <Text style={{ fontWeight: '700', color: colors.text }}>Prev</Text>
-                </AnimatedPressable>
-
-                <AnimatedPressable
-                  onPress={() => {
-                    setMasteredCards((prev) => (prev.includes(cardIndex) ? prev : [...prev, cardIndex]));
-                    setFlipped(false);
-                    setCardIndex((i) => (i + 1) % flashcards.length);
-                  }}
-                  style={[styles.flashBtn, { backgroundColor: colors.brandGreen, borderColor: colors.brandGreen }]}
-                >
-                  <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                  <Text style={{ fontWeight: '800', color: '#FFFFFF' }}>Got It</Text>
-                </AnimatedPressable>
-
-                <AnimatedPressable
-                  onPress={() => {
-                    setFlipped(false);
-                    setCardIndex((i) => (i + 1) % flashcards.length);
-                  }}
-                  style={[styles.flashBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                >
-                  <Text style={{ fontWeight: '700', color: colors.text }}>Next</Text>
-                  <Ionicons name="chevron-forward" size={18} color={colors.text} />
-                </AnimatedPressable>
+              {/* 10 or 20 AI Flashcards Generator (Part 6.6) */}
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {([10, 20] as const).map((cnt) => (
+                  <AnimatedPressable
+                    key={cnt}
+                    onPress={() => handleGenerateFlashcards(cnt)}
+                    style={[
+                      styles.deckBtn,
+                      { backgroundColor: colors.surfacePurpleSoft, borderColor: colors.purple },
+                    ]}
+                  >
+                    {loadingCards ? (
+                      <ActivityIndicator size="small" color={colors.purple} />
+                    ) : (
+                      <Text style={{ color: colors.purple, fontSize: 12.5, fontWeight: '800' }}>
+                        ✨ Generate {cnt} AI Cards
+                      </Text>
+                    )}
+                  </AnimatedPressable>
+                ))}
               </View>
+
+              {currentCard && (
+                <>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12.5, fontWeight: '700' }}>
+                    Card {cardIndex + 1} of {flashcards.length} · Mastered {masteredCards.length}/{flashcards.length}
+                  </Text>
+                  <AnimatedPressable
+                    onPress={() => setFlipped((f) => !f)}
+                    style={[
+                      styles.flashcard,
+                      {
+                        backgroundColor: flipped ? colors.surfaceMint : colors.surface,
+                        borderColor: flipped ? colors.mintDark : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: flipped ? colors.mintDark : colors.purple, fontSize: 11, fontWeight: '800' }}>
+                      {flipped ? 'ANSWER — TAP TO FLIP' : 'QUESTION — TAP TO REVEAL'}
+                    </Text>
+                    <Text style={[styles.flashcardText, { color: colors.text }]}>
+                      {flipped ? currentCard.back : currentCard.front}
+                    </Text>
+                  </AnimatedPressable>
+
+                  <View style={styles.cardControls}>
+                    <AnimatedPressable
+                      onPress={() => {
+                        setFlipped(false);
+                        setCardIndex((i) => Math.max(0, i - 1));
+                      }}
+                      style={[styles.ctrlBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    >
+                      <Text style={{ color: colors.text, fontWeight: '800', fontSize: 13 }}>← Prev</Text>
+                    </AnimatedPressable>
+                    <AnimatedPressable
+                      onPress={() => {
+                        if (!masteredCards.includes(cardIndex)) {
+                          setMasteredCards((prev) => [...prev, cardIndex]);
+                        }
+                        setFlipped(false);
+                        setCardIndex((i) => (i + 1) % flashcards.length);
+                      }}
+                      style={[styles.ctrlBtn, { backgroundColor: colors.mintDark, borderColor: colors.mintDark }]}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>Got It ✓</Text>
+                    </AnimatedPressable>
+                    <AnimatedPressable
+                      onPress={() => {
+                        setFlipped(false);
+                        setCardIndex((i) => (i + 1) % flashcards.length);
+                      }}
+                      style={[styles.ctrlBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                    >
+                      <Text style={{ color: colors.text, fontWeight: '800', fontSize: 13 }}>Next →</Text>
+                    </AnimatedPressable>
+                  </View>
+                </>
+              )}
             </View>
           )}
 
@@ -255,75 +397,93 @@ export default function LessonViewerScreen() {
             <>
               {lesson.practiceQuestion && (
                 <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Text style={[styles.cardHeading, { color: colors.text }]}>Quick Check (MCQ)</Text>
-                  <Text style={[styles.summary, { color: colors.text }]}>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>Quick Check (Free MCQ)</Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 13.5 }}>
                     {lesson.practiceQuestion.prompt}
                   </Text>
-                  {lesson.practiceQuestion.options.map((opt, idx) => {
-                    const picked = selectedOption === idx;
-                    const correct = idx === lesson.practiceQuestion!.correctIndex;
-                    return (
-                      <AnimatedPressable
-                        key={opt}
-                        onPress={() => setSelectedOption(idx)}
-                        style={[
-                          styles.optBtn,
-                          {
-                            backgroundColor:
-                              selectedOption !== null && correct
-                                ? colors.surfaceMint
-                                : picked && !correct
-                                ? colors.surfaceCoralSoft
-                                : colors.surfaceMuted,
-                            borderColor:
-                              selectedOption !== null && correct
-                                ? colors.brandGreen
-                                : picked
-                                ? colors.coral
-                                : 'transparent',
-                          },
-                        ]}
-                      >
-                        <Text style={{ color: colors.text, fontWeight: '600', fontSize: 13.5 }}>{opt}</Text>
-                      </AnimatedPressable>
-                    );
-                  })}
+                  <View style={{ gap: 8, marginTop: 6 }}>
+                    {lesson.practiceQuestion.options.map((opt, idx) => {
+                      const picked = selectedOption === idx;
+                      const isRight = idx === lesson.practiceQuestion!.correctIndex;
+                      const bg =
+                        selectedOption === null
+                          ? colors.surfaceMuted
+                          : isRight
+                            ? colors.surfaceMint
+                            : picked
+                              ? '#FFE4E6'
+                              : colors.surfaceMuted;
+                      return (
+                        <AnimatedPressable
+                          key={opt}
+                          onPress={() => setSelectedOption(idx)}
+                          style={[styles.optBtn, { backgroundColor: bg }]}
+                        >
+                          <Text style={{ color: colors.text, fontSize: 13.5, fontWeight: '700' }}>
+                            {opt}
+                          </Text>
+                        </AnimatedPressable>
+                      );
+                    })}
+                  </View>
                   {selectedOption !== null && (
-                    <Text style={[styles.explanation, { color: colors.mintDark }]}>
+                    <Text style={{ color: colors.mintDark, fontSize: 12.5, fontWeight: '700', marginTop: 4 }}>
                       {lesson.practiceQuestion.explanation}
                     </Text>
                   )}
                 </View>
               )}
 
+              {/* AI Written / Essay Exercise Grader (Part 6.7 & 14.3) */}
               <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.cardHeading, { color: colors.text }]}>Written Exercise Submission</Text>
-                <Text style={[styles.summary, { color: colors.textSecondary }]}>
-                  In your own words, summarize the key rule of “{lesson.title}” and give one exam example:
+                <Text style={[styles.cardTitle, { color: colors.text }]}>
+                  Written Exercise (AI Examiner Grading)
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+                  Explain "{lesson.title}" in your own words or work through an exam example below:
                 </Text>
                 <TextInput
                   value={exerciseAnswer}
                   onChangeText={setExerciseAnswer}
-                  multiline
-                  placeholder="Write your solution or explanation here..."
+                  placeholder="Write your explanation or worked solution..."
                   placeholderTextColor={colors.textMuted}
+                  multiline
                   style={[
                     styles.textArea,
-                    { backgroundColor: colors.surfaceMuted, color: colors.text, borderColor: colors.border },
+                    { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceMuted },
                   ]}
                 />
                 <AnimatedPressable
                   onPress={handleSubmitExercise}
-                  style={[styles.submitBtn, { backgroundColor: colors.purple }]}
+                  style={[styles.aiBtn, { backgroundColor: colors.coral }]}
                 >
-                  <Text style={styles.completeText}>
-                    {exerciseSubmitted ? 'Exercise Submitted ✓' : 'Submit Exercise'}
-                  </Text>
+                  {gradingEssay ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.ctaText}>Grade My Written Answer with AI</Text>
+                  )}
                 </AnimatedPressable>
-                {exerciseSubmitted && (
-                  <Text style={[styles.explanation, { color: colors.mintDark }]}>
-                    Great work! Compare your answer with the Key Takeaways in Notes or tap “Ask Molly” for detailed marking.
-                  </Text>
+
+                {essayGrade && (
+                  <View
+                    style={[
+                      styles.gradeBox,
+                      { backgroundColor: colors.surfaceMint, borderColor: colors.mintDark },
+                    ]}
+                  >
+                    <Text style={{ color: colors.mintDark, fontSize: 17, fontWeight: '900' }}>
+                      Score: {essayGrade.score}%
+                    </Text>
+                    <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19 }}>
+                      ✅ <Text style={{ fontWeight: '800' }}>Strengths:</Text> {essayGrade.strengths}
+                    </Text>
+                    <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19 }}>
+                      🎯 <Text style={{ fontWeight: '800' }}>To Improve:</Text> {essayGrade.missing}
+                    </Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12.5, lineHeight: 18 }}>
+                      📘 <Text style={{ fontWeight: '800' }}>Model Answer:</Text> {essayGrade.modelAnswer}
+                    </Text>
+                  </View>
                 )}
               </View>
             </>
@@ -333,11 +493,15 @@ export default function LessonViewerScreen() {
             onPress={handleComplete}
             style={[
               styles.completeBtn,
-              { backgroundColor: isCompleted ? colors.brandGreen : colors.coral },
+              { backgroundColor: isCompleted ? colors.surfaceMint : colors.mintDark },
             ]}
           >
-            <Ionicons name={isCompleted ? 'checkmark-done' : 'star'} size={18} color="#FFFFFF" />
-            <Text style={styles.completeText}>
+            <Ionicons
+              name={isCompleted ? 'checkmark-done' : 'star'}
+              size={18}
+              color={isCompleted ? colors.mintDark : '#FFFFFF'}
+            />
+            <Text style={[styles.ctaText, { color: isCompleted ? colors.mintDark : '#FFFFFF' }]}>
               {isCompleted ? 'Lesson Completed (+50 XP Earned)' : 'Mark Lesson Complete (+50 XP)'}
             </Text>
           </AnimatedPressable>
@@ -350,7 +514,7 @@ export default function LessonViewerScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  tabRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  tabRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 18, paddingBottom: 8 },
   tabPill: {
     flex: 1,
     flexDirection: 'row',
@@ -361,76 +525,75 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  tabText: { fontSize: 12, fontWeight: '700' },
+  tabText: { fontSize: 12, fontWeight: '800' },
   scroll: { paddingHorizontal: 18, paddingBottom: 42, gap: 14 },
-  tagRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  pill: { paddingHorizontal: 11, paddingVertical: 5, borderRadius: 999 },
-  pillText: { fontSize: 12, fontWeight: '700' },
-  title: { fontSize: 23, fontWeight: '900', lineHeight: 28 },
-  summary: { fontSize: 14.5, lineHeight: 21 },
+  tagRow: { flexDirection: 'row', gap: 8 },
+  pill: { paddingHorizontal: 11, paddingVertical: 4, borderRadius: 999 },
+  pillText: { fontSize: 11.5, fontWeight: '800' },
+  title: { fontSize: 22, fontWeight: '900', letterSpacing: -0.3 },
+  summary: { fontSize: 14, lineHeight: 21 },
   eqCard: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 4 },
   eqLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   eqValue: { fontSize: 16, fontWeight: '800' },
-  card: { borderRadius: 20, borderWidth: 1, padding: 16, gap: 10 },
-  cardHeading: { fontSize: 16, fontWeight: '800' },
-  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  bulletText: { flex: 1, fontSize: 14, lineHeight: 20 },
-  mollyBtn: {
+  card: { borderRadius: 20, borderWidth: 1, padding: 15, gap: 10 },
+  cardTitle: { fontSize: 15.5, fontWeight: '800' },
+  kpRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  kpText: { flex: 1, fontSize: 13.5, lineHeight: 20 },
+  tipBox: { borderRadius: 12, padding: 10 },
+  aiBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 13,
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: 999,
   },
-  mollyBtnText: { fontSize: 14, fontWeight: '800' },
-  cardMeta: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
-  flashcard: {
-    minHeight: 200,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    padding: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  flashSideTag: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
-  flashBody: { fontSize: 17, fontWeight: '700', textAlign: 'center', lineHeight: 24 },
-  flashActions: { flexDirection: 'row', gap: 8 },
-  flashBtn: {
-    flex: 1,
+  secondaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 12,
-    borderRadius: 16,
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 999,
     borderWidth: 1,
   },
-  optBtn: { padding: 12, borderRadius: 14, borderWidth: 1.5 },
-  explanation: { fontSize: 13, fontWeight: '700', lineHeight: 18 },
-  textArea: {
-    minHeight: 96,
+  deckBtn: {
+    flex: 1,
+    paddingVertical: 10,
     borderRadius: 14,
     borderWidth: 1,
-    padding: 12,
-    fontSize: 14,
-    textAlignVertical: 'top',
-  },
-  submitBtn: {
-    paddingVertical: 12,
-    borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
+  flashcard: {
+    minHeight: 190,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    padding: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  flashcardText: { fontSize: 17, fontWeight: '800', textAlign: 'center', lineHeight: 24 },
+  cardControls: { flexDirection: 'row', gap: 8 },
+  ctrlBtn: { flex: 1, paddingVertical: 11, borderRadius: 999, borderWidth: 1, alignItems: 'center' },
+  optBtn: { paddingHorizontal: 13, paddingVertical: 11, borderRadius: 12 },
+  textArea: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    minHeight: 96,
+    textAlignVertical: 'top',
+    fontSize: 14,
+  },
+  gradeBox: { borderRadius: 16, borderWidth: 1, padding: 13, gap: 6 },
   completeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 15,
+    paddingVertical: 14,
     borderRadius: 999,
-    marginTop: 4,
   },
-  completeText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  ctaText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
 });

@@ -159,6 +159,97 @@ export async function generateAITimetableAPI(input: {
   return { data: fallback, source: 'local-prototype' };
 }
 
+export interface GeneratedTopicNotes {
+  title: string;
+  sections: { heading: string; body: string }[];
+  workedExample: string;
+  examTip: string;
+}
+
+export async function generateTopicNotesAPI(input: {
+  subject: string;
+  level: string;
+  topic: string;
+  mode?: 'initial' | 'continue';
+}): Promise<AIResponse<GeneratedTopicNotes>> {
+  if (isLiveAIGatewayConfigured) {
+    const remote = await postToGatewayDetailed<GeneratedTopicNotes>('/topic-notes', input);
+    if (remote.data?.sections?.length) {
+      return { data: remote.data, source: 'live-gateway' };
+    }
+  }
+  return {
+    source: 'local-prototype',
+    data: {
+      title: `${input.topic} — Study Notes`,
+      sections: [
+        {
+          heading: 'Core Principles',
+          body: `Understand the fundamental definitions and laws governing ${input.topic} in ${input.level} ${input.subject}.`,
+        },
+        {
+          heading: 'Exam Application',
+          body: 'Always state the formula first, substitute SI units clearly, and show intermediate steps for method marks.',
+        },
+      ],
+      workedExample: `Apply the core relationship for ${input.topic} step by step to a standard past-paper question.`,
+      examTip: 'Highlight units and key terms — GCE examiners award marks for precise terminology.',
+    },
+  };
+}
+
+export async function generateFlashcardsAPI(input: {
+  subject: string;
+  topic: string;
+  count: 10 | 20;
+}): Promise<AIResponse<{ front: string; back: string }[]>> {
+  if (isLiveAIGatewayConfigured) {
+    const remote = await postToGatewayDetailed<{ cards?: { front: string; back: string }[] }>(
+      '/flashcards',
+      input
+    );
+    if (remote.data?.cards?.length) {
+      return { data: remote.data.cards, source: 'live-gateway' };
+    }
+  }
+  const fallback = Array.from({ length: input.count }, (_, i) => ({
+    front: `${input.topic} · Flashcard #${i + 1}: Explain key concept ${i + 1}`,
+    back: `Core revision point #${i + 1} for ${input.subject} — ${input.topic}.`,
+  }));
+  return { data: fallback, source: 'local-prototype' };
+}
+
+export interface EssayGradeResult {
+  score: number;
+  strengths: string;
+  missing: string;
+  modelAnswer: string;
+}
+
+export async function gradeEssayAnswerAPI(input: {
+  subject: string;
+  topic: string;
+  answer: string;
+}): Promise<AIResponse<EssayGradeResult>> {
+  if (isLiveAIGatewayConfigured) {
+    const remote = await postToGatewayDetailed<EssayGradeResult>('/grade-essay', input);
+    if (remote.data && typeof remote.data.score === 'number') {
+      return { data: remote.data, source: 'live-gateway' };
+    }
+  }
+  const words = input.answer.trim().split(/\s+/).length;
+  const est = Math.min(92, Math.max(45, words * 3));
+  return {
+    source: 'local-prototype',
+    data: {
+      score: est,
+      strengths: 'Clear attempt addressing the topic in your own words.',
+      missing: 'Add a concrete worked example and explicit key definitions for full marks.',
+      modelAnswer: `A top-scoring ${input.subject} answer on ${input.topic} defines the core concept clearly, states the relevant rule/formula, and illustrates it with one concise example.`,
+    },
+  };
+}
+
 export async function askMollyAI(
   question: string,
   subject?: string,

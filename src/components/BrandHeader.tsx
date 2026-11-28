@@ -20,10 +20,21 @@ export function BrandHeader({
   showBack = false,
   title,
 }: BrandHeaderProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { profile, notifications } = useApp();
   const router = useRouter();
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const glassBtnStyle = {
+    backgroundColor: isDark ? 'rgba(32, 46, 40, 0.78)' : 'rgba(255, 255, 255, 0.86)',
+    borderColor: isDark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(255, 255, 255, 0.96)',
+    borderWidth: 1.5,
+    shadowColor: isDark ? '#000000' : '#251D3A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: isDark ? 0.35 : 0.11,
+    shadowRadius: 10,
+    elevation: 4,
+  };
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -39,7 +50,7 @@ export function BrandHeader({
         {showBack ? (
           <AnimatedPressable
             onPress={handleBack}
-            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            style={[styles.iconBtn, glassBtnStyle]}
             accessibilityLabel="Go back"
           >
             <Ionicons name="chevron-back" size={20} color={colors.text} />
@@ -79,7 +90,7 @@ export function BrandHeader({
         {!showBack && (
           <AnimatedPressable
             onPress={() => router.push('/notifications')}
-            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            style={[styles.iconBtn, glassBtnStyle]}
             accessibilityLabel="Notifications"
           >
             <Ionicons name="notifications-outline" size={20} color={colors.text} />
@@ -90,7 +101,7 @@ export function BrandHeader({
         {showSettings && (
           <AnimatedPressable
             onPress={() => router.push('/settings')}
-            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            style={[styles.iconBtn, glassBtnStyle]}
             accessibilityLabel="Settings"
           >
             <Ionicons name="settings-outline" size={20} color={colors.text} />

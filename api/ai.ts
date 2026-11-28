@@ -363,6 +363,82 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       return;
     }
 
+    if (route === 'topic-notes') {
+      const subject = String(body.subject ?? 'General');
+      const level = String(body.level ?? 'O-Level');
+      const topic = String(body.topic ?? 'Core Topic');
+      const mode = String(body.mode ?? 'initial'); // 'initial' | 'continue'
+      const reply = await callNvidia(
+        [
+          {
+            role: 'system',
+            content:
+              'You are Molly, a clear academic notes author. Return ONLY raw valid JSON (no markdown fences, no LaTeX backslashes — use Unicode symbols like ², ×, Ω, π) with schema: { "title": string, "sections": [{ "heading": string, "body": string }], "workedExample": string, "examTip": string }.',
+          },
+          {
+            role: 'user',
+            content:
+              mode === 'continue'
+                ? `Write an additional deeper continuation explanation with a fresh exam worked example for ${level} ${subject} — "${topic}" (do not repeat basic definitions).`
+                : `Write clear, structured exam-ready study notes for ${level} ${subject} — "${topic}" with 3 concise sections, 1 worked example, and 1 examiner tip.`,
+          },
+        ],
+        1400,
+        true
+      );
+      const cleaned = reply.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim().replace(/,\s*([}\]])/g, '$1');
+      res.status(200).json(JSON.parse(cleaned));
+      return;
+    }
+
+    if (route === 'flashcards') {
+      const subject = String(body.subject ?? 'General');
+      const topic = String(body.topic ?? 'Core Topic');
+      const count = Math.min(20, Math.max(5, Number(body.count ?? 10)));
+      const reply = await callNvidia(
+        [
+          {
+            role: 'system',
+            content:
+              'Return ONLY raw valid JSON (no markdown fences, no LaTeX backslashes) with schema: { "cards": [{ "front": string, "back": string }] }. Make each front a crisp exam prompt/definition question and each back a clear 1-2 sentence answer.',
+          },
+          {
+            role: 'user',
+            content: `Generate ${count} high-yield revision flashcards for ${subject} on "${topic}".`,
+          },
+        ],
+        1600,
+        true
+      );
+      const cleaned = reply.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim().replace(/,\s*([}\]])/g, '$1');
+      res.status(200).json(JSON.parse(cleaned));
+      return;
+    }
+
+    if (route === 'grade-essay') {
+      const subject = String(body.subject ?? 'General');
+      const topic = String(body.topic ?? 'Core Topic');
+      const answer = String(body.answer ?? '').trim();
+      const reply = await callNvidia(
+        [
+          {
+            role: 'system',
+            content:
+              'You are a fair GCE/University examiner. Return ONLY raw valid JSON (no markdown fences, no LaTeX backslashes) with schema: { "score": number (0-100), "strengths": string, "missing": string, "modelAnswer": string }. Award partial marks fairly for equivalent wording.',
+          },
+          {
+            role: 'user',
+            content: `Subject: ${subject}\nTopic: ${topic}\nStudent Written Answer:\n${answer.slice(0, 2000)}`,
+          },
+        ],
+        900,
+        true
+      );
+      const cleaned = reply.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim().replace(/,\s*([}\]])/g, '$1');
+      res.status(200).json(JSON.parse(cleaned));
+      return;
+    }
+
     const reply = await callNvidia([
       {
         role: 'system',
