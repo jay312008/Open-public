@@ -5,13 +5,24 @@ import { Ionicons } from '@expo/vector-icons';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { useTheme } from '@/theme/ThemeContext';
 import { evaluateMathExpression } from '@/lib/safeMath';
+import {
+  ChemistryMoleculeWidget,
+  DynamicDataTableWidget,
+  ElectronShellSpec,
+  InteractivePeriodicTableWidget,
+  MoleculeAtom,
+  MoleculeBond,
+} from './ChemistryAndTableWidgets';
 
 export type ChatWidgetType =
   | 'function_plot'
   | 'canvas_diagram'
   | 'chart'
   | 'wave'
-  | 'calculator';
+  | 'calculator'
+  | 'table'
+  | 'periodic_table'
+  | 'molecule';
 
 export interface DiagramPrimitive {
   kind: 'line' | 'circle' | 'rect' | 'path' | 'text';
@@ -44,7 +55,7 @@ export interface ChatWidgetSpec {
   title?: string;
   caption?: string;
   // function_plot
-  expression?: string; // e.g., "2*x + 3", "sin(x)", "x^2 - 4*x + 3", "x^3 - 3*x"
+  expression?: string;
   xMin?: number;
   xMax?: number;
   yMin?: number;
@@ -61,9 +72,16 @@ export interface ChatWidgetSpec {
   frequency?: number;
   amplitude?: number;
   // calculator
-  formulaExpr?: string; // e.g., "f * l", "m * a", "pi * r^2"
-  resultLabel?: string; // e.g., "Wave speed (m/s)"
+  formulaExpr?: string;
+  resultLabel?: string;
   variables?: CalcVariable[];
+  // table (Excel / spreadsheet style)
+  headers?: string[];
+  rows?: string[][];
+  // molecule (Chemistry dot-and-cross shells OR organic structural formula)
+  atoms?: MoleculeAtom[];
+  bonds?: MoleculeBond[];
+  shells?: ElectronShellSpec[];
 }
 
 export function ChatVisualWidget({ widget }: { widget: ChatWidgetSpec }) {
@@ -78,6 +96,27 @@ export function ChatVisualWidget({ widget }: { widget: ChatWidgetSpec }) {
       return <DynamicWaveBoardWidget widget={widget} />;
     case 'calculator':
       return <DynamicCalculatorWidget widget={widget} />;
+    case 'table':
+      return (
+        <DynamicDataTableWidget
+          title={widget.title}
+          headers={widget.headers ?? []}
+          rows={widget.rows ?? []}
+          caption={widget.caption}
+        />
+      );
+    case 'periodic_table':
+      return <InteractivePeriodicTableWidget title={widget.title} caption={widget.caption} />;
+    case 'molecule':
+      return (
+        <ChemistryMoleculeWidget
+          title={widget.title}
+          atoms={widget.atoms}
+          bonds={widget.bonds}
+          shells={widget.shells}
+          caption={widget.caption}
+        />
+      );
     default:
       return null;
   }

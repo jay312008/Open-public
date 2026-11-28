@@ -7,9 +7,10 @@ import { useRouter } from 'expo-router';
 import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { CompanionAvatar } from '@/components/CompanionAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
-import { BrandAssets } from '@/constants/assets';
+import { getCompanionById } from '@/constants/assets';
 import { EssayGradeResult, generateQuizQuestions, gradeEssayAnswerAPI } from '@/lib/aiGateway';
 
 const SAVED_QUIZZES_KEY = 'learnymol_saved_quizzes_v1';
@@ -43,7 +44,8 @@ interface SavedQuizPack {
 export default function QuizGeneratorScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const { recordQuizCompletion, logStudyActivity } = useApp();
+  const { profile, recordQuizCompletion, logStudyActivity } = useApp();
+  const companion = getCompanionById(profile.companionId);
 
   const [viewMode, setViewMode] = useState<QuizViewMode>('setup');
   const [subject, setSubject] = useState('Physics');
@@ -433,11 +435,7 @@ export default function QuizGeneratorScreen() {
                 },
               ]}
             >
-              <Image
-                source={BrandAssets.mascotTransparent}
-                style={{ width: 96, height: 96 }}
-                resizeMode="contain"
-              />
+              <CompanionAvatar companionId={profile.companionId} size={96} />
               <Text
                 style={{
                   color: finalScorePct >= 60 ? colors.mintDark : colors.purple,
@@ -450,10 +448,10 @@ export default function QuizGeneratorScreen() {
                   ? 'Hooray! Amazing Job! 🎉'
                   : finalScorePct >= 50
                     ? 'Great Effort! Keep Going! ⭐'
-                    : 'Good Try! Molly Has Your Back! 💪'}
+                    : `Good Try! ${companion.name} Has Your Back! 💪`}
               </Text>
               <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700', textAlign: 'center', lineHeight: 22 }}>
-                Molly says: You got{' '}
+                {companion.name} says: You got{' '}
                 <Text style={{ fontWeight: '900', color: colors.mintDark }}>
                   {correctCount} out of {activeQuiz.questions.length}
                 </Text>{' '}
