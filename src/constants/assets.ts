@@ -29,11 +29,39 @@ export const SubjectCardAssets = {
   techBg: require('../../assets/images/subjects/tech_bg.jpg') as ImageSourcePropType,
 };
 
+export type CompanionMood = 'default' | 'celebrate' | 'happy' | 'thinking' | 'encourage';
+
 export const CompanionAssets: Record<CompanionId, ImageSourcePropType> = {
   molly: require('../../assets/images/logo-mascot-transparent.png') as ImageSourcePropType,
   leo: require('../../assets/images/companions/leo.png') as ImageSourcePropType,
   pip: require('../../assets/images/companions/pip.png') as ImageSourcePropType,
   zuri: require('../../assets/images/companions/zuri.png') as ImageSourcePropType,
+};
+
+export const CompanionReactionAssets: Record<
+  CompanionId,
+  Partial<Record<CompanionMood, ImageSourcePropType>>
+> = {
+  molly: {
+    default: require('../../assets/images/logo-mascot-transparent.png') as ImageSourcePropType,
+    celebrate: require('../../assets/images/companions/molly_celebrate.png') as ImageSourcePropType,
+    happy: require('../../assets/images/companions/molly_happy.png') as ImageSourcePropType,
+    thinking: require('../../assets/images/companions/molly_thinking.png') as ImageSourcePropType,
+    encourage: require('../../assets/images/companions/molly_encourage.png') as ImageSourcePropType,
+  },
+  leo: {
+    default: require('../../assets/images/companions/leo.png') as ImageSourcePropType,
+    celebrate: require('../../assets/images/companions/leo_celebrate.png') as ImageSourcePropType,
+    happy: require('../../assets/images/companions/leo_happy.png') as ImageSourcePropType,
+    thinking: require('../../assets/images/companions/leo_thinking.png') as ImageSourcePropType,
+    encourage: require('../../assets/images/companions/leo.png') as ImageSourcePropType,
+  },
+  pip: {
+    default: require('../../assets/images/companions/pip.png') as ImageSourcePropType,
+  },
+  zuri: {
+    default: require('../../assets/images/companions/zuri.png') as ImageSourcePropType,
+  },
 };
 
 export type CompanionId = 'molly' | 'leo' | 'pip' | 'zuri';

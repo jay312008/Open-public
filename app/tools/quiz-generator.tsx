@@ -188,7 +188,7 @@ export default function QuizGeneratorScreen() {
 
     const promptText =
       missedQuestions.length > 0
-        ? `Molly, I just finished a ${activeQuiz.level} ${activeQuiz.subject} quiz on "${activeQuiz.topic}" and got ${correctCount}/${activeQuiz.questions.length} (${finalScorePct}%). Please explain these questions I missed clearly step by step so I understand them:\n\n${summaryLines}`
+        ? `${companion.name}, I just finished a ${activeQuiz.level} ${activeQuiz.subject} quiz on "${activeQuiz.topic}" and got ${correctCount}/${activeQuiz.questions.length} (${finalScorePct}%). Please explain these questions I missed clearly step by step so I understand them:\n\n${summaryLines}`
         : summaryLines;
 
     router.push({
@@ -425,7 +425,7 @@ export default function QuizGeneratorScreen() {
         {/* STAGE 3: HAPPY MOLLY CELEBRATION & RESULTS REVIEW PAGE */}
         {viewMode === 'results' && activeQuiz && (
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-            {/* Happy Molly Celebration Card */}
+            {/* Dynamic Companion Reaction Celebration Card (4 Score-Based Reactions, Zero Emojis) */}
             <View
               style={[
                 styles.celebrationCard,
@@ -435,7 +435,19 @@ export default function QuizGeneratorScreen() {
                 },
               ]}
             >
-              <CompanionAvatar companionId={profile.companionId} size={96} />
+              <CompanionAvatar
+                companionId={profile.companionId}
+                mood={
+                  finalScorePct >= 80
+                    ? 'celebrate'
+                    : finalScorePct >= 60
+                      ? 'happy'
+                      : finalScorePct >= 40
+                        ? 'thinking'
+                        : 'encourage'
+                }
+                size={112}
+              />
               <Text
                 style={{
                   color: finalScorePct >= 60 ? colors.mintDark : colors.purple,
@@ -445,10 +457,12 @@ export default function QuizGeneratorScreen() {
                 }}
               >
                 {finalScorePct >= 80
-                  ? 'Hooray! Amazing Job! 🎉'
-                  : finalScorePct >= 50
-                    ? 'Great Effort! Keep Going! ⭐'
-                    : `Good Try! ${companion.name} Has Your Back! 💪`}
+                  ? 'Hooray! Outstanding Mastery!'
+                  : finalScorePct >= 60
+                    ? `Great Job! ${companion.name} Is Proud!`
+                    : finalScorePct >= 40
+                      ? `Getting Closer! Let's Review Together`
+                      : `Good Try! ${companion.name} Has Your Back!`}
               </Text>
               <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700', textAlign: 'center', lineHeight: 22 }}>
                 {companion.name} says: You got{' '}
@@ -462,15 +476,24 @@ export default function QuizGeneratorScreen() {
               </Text>
               <View style={styles.scoreRow}>
                 <View style={[styles.scoreBadge, { backgroundColor: colors.surface }]}>
-                  <Text style={{ color: colors.mintDark, fontSize: 18, fontWeight: '900' }}>✅ {correctCount}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.mintDark} />
+                    <Text style={{ color: colors.mintDark, fontSize: 18, fontWeight: '900' }}>{correctCount}</Text>
+                  </View>
                   <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: '700' }}>Correct</Text>
                 </View>
                 <View style={[styles.scoreBadge, { backgroundColor: colors.surface }]}>
-                  <Text style={{ color: colors.coral, fontSize: 18, fontWeight: '900' }}>❌ {missedQuestions.length}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Ionicons name="close-circle" size={18} color={colors.coral} />
+                    <Text style={{ color: colors.coral, fontSize: 18, fontWeight: '900' }}>{missedQuestions.length}</Text>
+                  </View>
                   <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: '700' }}>Missed</Text>
                 </View>
                 <View style={[styles.scoreBadge, { backgroundColor: colors.surface }]}>
-                  <Text style={{ color: colors.purple, fontSize: 18, fontWeight: '900' }}>{finalScorePct}%</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Ionicons name="ribbon" size={18} color={colors.purple} />
+                    <Text style={{ color: colors.purple, fontSize: 18, fontWeight: '900' }}>{finalScorePct}%</Text>
+                  </View>
                   <Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: '700' }}>Score</Text>
                 </View>
               </View>

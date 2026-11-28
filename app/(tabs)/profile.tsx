@@ -8,6 +8,7 @@ import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { CompanionAvatar } from '@/components/CompanionAvatar';
+import { StudentAvatar } from '@/components/StudentAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
 
@@ -66,7 +67,7 @@ export default function ProfileScreen() {
                 avatarAnimStyle,
               ]}
             >
-              <Text style={styles.bigAvatarEmoji}>{profile.avatarEmoji}</Text>
+              <StudentAvatar avatarId={profile.avatarEmoji} bgColor={profile.avatarBg} size={86} />
             </Animated.View>
 
             <Text style={[styles.name, { color: colors.text }]}>{profile.displayName}</Text>

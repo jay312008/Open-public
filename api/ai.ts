@@ -142,7 +142,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           {
             role: 'system',
             content:
-              `You are ${companionName}, a warm, attentive, 1-on-1 human-like tutor in LearnyMol. If asked your name, always say your name is ${companionName}. RULES: (1) ALWAYS listen carefully to the student's exact message and the conversation history — NEVER switch to an unrelated topic! (2) Talk naturally like a caring teacher sitting beside the student: clear, simple English, never robotic or overly dense. (3) For math/science equations, put each step on its own clean line so nothing is squeezed together. (4) NEVER use LaTeX backslashes (no \\rightarrow, \\frac, \\neq, \\sqrt, no $ signs) — use plain Unicode symbols (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). (5) If the student asks for a table, comparison, truth table, periodic table, chemical bond, organic structure, graph, or diagram, ALWAYS use the exact right widget! Return ONLY raw valid JSON with schema: { "heading"?: string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Widget types: (1) { "type":"function_plot", "title":string, "expression":string, "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } (2) { "type":"table", "title":string, "headers":string[], "rows":string[][], "caption":string } — use for ANY spreadsheet/comparison/truth/values table! (3) { "type":"periodic_table", "title":string, "caption":string } — use whenever the student asks for the Periodic Table! (4) { "type":"molecule", "title":string, "atoms"?:[{"id":string,"symbol":string,"x":number,"y":number,"charge"?:string}], "bonds"?:[{"from":string,"to":string,"order"?:1|2|3}], "shells"?:[{"symbol":string,"charge"?:string,"rings":number[],"style":"dot"|"cross"}], "caption":string } on a 320x190 canvas — ALWAYS use "molecule" (NOT canvas_diagram) for chemical bonding dot-and-cross shells or organic structural formulas! (5) { "type":"canvas_diagram", "title":string, "primitives":[{"kind":"line"|"circle"|"rect"|"path"|"text","x1"?:n,"y1"?:n,"x2"?:n,"y2"?:n,"cx"?:n,"cy"?:n,"r"?:n,"x"?:n,"y"?:n,"w"?:n,"h"?:n,"d"?:s,"content"?:s,"color"?:s,"fill"?:s}], "caption":string } on a 264x160 canvas (6) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (7) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (8) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }.`,
+              `You are ${companionName}, a warm, attentive, 1-on-1 human-like tutor in LearnyMol. If asked your name, always say your name is ${companionName}. RULES: (1) ALWAYS listen carefully to the student's exact message and the conversation history — NEVER switch to an unrelated topic! (2) Talk naturally like a caring teacher sitting beside the student: clear, simple English, never robotic or overly dense. (3) For math/science equations, put each step on its own clean line so nothing is squeezed together. (4) NEVER use LaTeX backslashes (no \\rightarrow, \\frac, \\neq, \\sqrt, no $ signs) — use plain Unicode symbols (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). (5) Choose the EXACT right visual widget! Return ONLY raw valid JSON with schema: { "heading"?: string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Widget types: (1) { "type":"function_plot", "title":string, "expression":string, "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } — ONLY use for pure y=f(x) functions of single variable x (like "x^2 - 4" or "sin(x)"). NEVER put "=" or variables like theta1/n1/u/v in function_plot! (2) { "type":"table", "title":string, "headers":string[], "rows":string[][], "caption":string } — use for ANY spreadsheet/comparison/truth/values table! (3) { "type":"periodic_table", "title":string, "caption":string } — use whenever the student asks for the Periodic Table! (4) { "type":"molecule", "title":string, "atoms"?:[{"id":string,"symbol":string,"x":number,"y":number,"charge"?:string}], "bonds"?:[{"from":string,"to":string,"order"?:1|2|3}], "shells"?:[{"symbol":string,"charge"?:string,"rings":number[],"style":"dot"|"cross"}], "caption":string } on a 320x190 canvas — use for chemical bonding dot-and-cross shells or organic structures! (5) { "type":"canvas_diagram", "title":string, "primitives":[...], "caption":string } on a 340x220 scientific blueprint canvas — USE THIS for ALL physics/optics/echo/sound/geometry/triangles/ladder problems/forces/circuits/potential difference/prisms/lenses/biology diagrams! Supported primitives: "arrow" (x1,y1,x2,y2,color,dashed?), "line" (x1,y1,x2,y2,color,dashed?), "polygon" (points:[{x,y}],color,fill?), "arc" (cx,cy,r,startAngle,endAngle,label?,color), "right_angle" (x,y,size?,dx?,dy?,color), "circle" (cx,cy,r,color,fill?), "rect" (x,y,w,h,color,fill?), "path" (d,color,fill?,dashed?), "text" (x,y,content,color,fontSize?). (6) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (7) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (8) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }.`,
           },
           ...historyMsgs,
           {
@@ -332,6 +332,160 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             bondingWidget,
             ...existing.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
           ];
+        }
+      }
+
+      // Sanitize broken function_plot widgets (e.g., if model emitted "sin(theta2) = (n1/n2) * sin(theta1)" which renders as an empty cross)
+      if (Array.isArray(parsed.widgets)) {
+        const ALLOWED_IDENTS = new Set(['x', 'sin', 'cos', 'tan', 'sqrt', 'abs', 'log', 'ln', 'exp', 'pi', 'e']);
+        parsed.widgets = parsed.widgets.filter((w: unknown) => {
+          const obj = w as { type?: string; expression?: string };
+          if (obj?.type !== 'function_plot') return true;
+          const expr = String(obj.expression ?? '').trim();
+          if (!expr || expr.includes('=')) return false;
+          const idents = expr.toLowerCase().match(/[a-z_][a-z0-9_]*/g) ?? [];
+          return idents.every((id) => ALLOWED_IDENTS.has(id));
+        });
+      }
+
+      // Ensure rich textbook-accurate 340x220 scientific canvas diagrams for Optics (Refraction/Reflection), Echo, Geometry/Ladder, and Potential Difference/Circuits
+      if (asksVisual) {
+        const currentWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        const hasRichCanvas = currentWidgets.some(
+          (w: unknown) =>
+            (w as { type?: string; primitives?: unknown[] })?.type === 'canvas_diagram' &&
+            Array.isArray((w as { primitives?: unknown[] }).primitives) &&
+            ((w as { primitives?: unknown[] }).primitives?.length ?? 0) >= 5
+        );
+
+        if (!hasRichCanvas) {
+          if (/\b(refract|deflect|snell|light\s+bend|air\s+to\s+water|glass\s+block)\b/i.test(recentContext)) {
+            parsed.widgets = [
+              {
+                type: 'canvas_diagram',
+                title: 'Refraction (Deflection) of Light — Air to Water',
+                primitives: [
+                  { kind: 'rect', x: 16, y: 112, w: 308, h: 94, color: '#0EA5E9', fill: 'rgba(14,165,233,0.14)', strokeWidth: 1.5 },
+                  { kind: 'line', x1: 16, y1: 112, x2: 324, y2: 112, color: '#0284C7', strokeWidth: 2.5 },
+                  { kind: 'line', x1: 170, y1: 18, x2: 170, y2: 204, color: '#64748B', dashed: true, strokeWidth: 1.8 },
+                  { kind: 'arrow', x1: 66, y1: 28, x2: 170, y2: 112, color: '#F59E0B', strokeWidth: 3 },
+                  { kind: 'arrow', x1: 170, y1: 112, x2: 222, y2: 202, color: '#EF4444', strokeWidth: 3 },
+                  { kind: 'arc', cx: 170, cy: 112, r: 34, startAngle: -141, endAngle: -90, label: 'θ₁', color: '#D97706' },
+                  { kind: 'arc', cx: 170, cy: 112, r: 34, startAngle: 60, endAngle: 90, label: 'θ₂', color: '#DC2626' },
+                  { kind: 'text', x: 56, y: 98, content: 'Air (n₁ = 1.00)', color: '#0369A1', fontSize: 10 },
+                  { kind: 'text', x: 64, y: 132, content: 'Water (n₂ = 1.33)', color: '#0369A1', fontSize: 10 },
+                  { kind: 'text', x: 215, y: 30, content: 'Normal (90°)', color: '#64748B', fontSize: 10 },
+                  { kind: 'text', x: 84, y: 24, content: 'Incident Ray', color: '#D97706', fontSize: 10.5 },
+                  { kind: 'text', x: 266, y: 184, content: 'Refracted Ray', color: '#DC2626', fontSize: 10.5 },
+                ],
+                caption: 'Light slows down entering water (n₂ > n₁) and bends toward the normal: n₁·sin(θ₁) = n₂·sin(θ₂).',
+              },
+              ...currentWidgets,
+            ];
+          } else if (/\b(reflect|mirror|law\s+of\s+reflection)\b/i.test(recentContext) && /\b(light|ray|mirror|angle)\b/i.test(recentContext)) {
+            parsed.widgets = [
+              {
+                type: 'canvas_diagram',
+                title: 'Reflection of Light on a Plane Mirror',
+                primitives: [
+                  { kind: 'rect', x: 24, y: 162, w: 292, h: 16, color: '#475569', fill: 'rgba(100,116,139,0.22)', strokeWidth: 2 },
+                  { kind: 'line', x1: 170, y1: 24, x2: 170, y2: 162, color: '#64748B', dashed: true, strokeWidth: 1.8 },
+                  { kind: 'arrow', x1: 58, y1: 42, x2: 170, y2: 162, color: '#F59E0B', strokeWidth: 3 },
+                  { kind: 'arrow', x1: 170, y1: 162, x2: 282, y2: 42, color: '#10B981', strokeWidth: 3 },
+                  { kind: 'arc', cx: 170, cy: 162, r: 38, startAngle: -133, endAngle: -90, label: 'i', color: '#D97706' },
+                  { kind: 'arc', cx: 170, cy: 162, r: 38, startAngle: -90, endAngle: -47, label: 'r', color: '#059669' },
+                  { kind: 'text', x: 170, y: 196, content: 'Plane Mirror Surface (Angle i = Angle r)', color: '#334155', fontSize: 10.5 },
+                  { kind: 'text', x: 170, y: 18, content: 'Normal', color: '#64748B', fontSize: 10 },
+                  { kind: 'text', x: 76, y: 36, content: 'Incident Ray', color: '#D97706', fontSize: 10.5 },
+                  { kind: 'text', x: 266, y: 36, content: 'Reflected Ray', color: '#059669', fontSize: 10.5 },
+                ],
+                caption: 'Law of Reflection: The angle of incidence (i) equals the angle of reflection (r), measured from the normal.',
+              },
+              ...currentWidgets,
+            ];
+          } else if (/\b(echo|sound\s+reflect|reverberation)\b/i.test(recentContext)) {
+            parsed.widgets = [
+              {
+                type: 'canvas_diagram',
+                title: 'Formation of an Echo (Sound Reflection)',
+                primitives: [
+                  { kind: 'circle', cx: 52, cy: 112, r: 22, color: '#2563EB', fill: 'rgba(37,99,235,0.16)' },
+                  { kind: 'text', x: 52, y: 115, content: 'Source', color: '#1D4ED8', fontSize: 10 },
+                  { kind: 'rect', x: 284, y: 30, w: 28, h: 160, color: '#475569', fill: 'rgba(100,116,139,0.28)' },
+                  { kind: 'text', x: 298, y: 20, content: 'Wall / Cliff', color: '#334155', fontSize: 10 },
+                  { kind: 'arrow', x1: 82, y1: 84, x2: 278, y2: 84, color: '#3B82F6', strokeWidth: 2.8 },
+                  { kind: 'arc', cx: 92, cy: 84, r: 18, startAngle: -45, endAngle: 45, color: '#3B82F6' },
+                  { kind: 'arc', cx: 110, cy: 84, r: 24, startAngle: -45, endAngle: 45, color: '#60A5FA' },
+                  { kind: 'arrow', x1: 278, y1: 140, x2: 82, y2: 140, color: '#EF4444', strokeWidth: 2.8, dashed: true },
+                  { kind: 'arc', cx: 266, cy: 140, r: 18, startAngle: 135, endAngle: 225, color: '#EF4444' },
+                  { kind: 'arc', cx: 248, cy: 140, r: 24, startAngle: 135, endAngle: 225, color: '#F87171' },
+                  { kind: 'line', x1: 52, y1: 186, x2: 284, y2: 186, color: '#7C3AED', dashed: true, strokeWidth: 1.6 },
+                  { kind: 'text', x: 178, y: 66, content: 'Original Sound Wave →', color: '#1D4ED8', fontSize: 10.5 },
+                  { kind: 'text', x: 178, y: 162, content: '← Reflected Echo Wave', color: '#DC2626', fontSize: 10.5 },
+                  { kind: 'text', x: 168, y: 204, content: 'Distance d = (v × t) / 2', color: '#7C3AED', fontSize: 11 },
+                ],
+                caption: 'Sound travels distance d to the reflecting wall and returns distance d (total 2d), so d = (v × t) / 2.',
+              },
+              ...currentWidgets,
+            ];
+          } else if (/\b(ladder|right[\s-]angled?\s+triangle|pythagor|trigonometr|hypotenuse)\b/i.test(recentContext)) {
+            parsed.widgets = [
+              {
+                type: 'canvas_diagram',
+                title: /\bladder\b/i.test(recentContext)
+                  ? 'Right Triangle Model — Leaning Ladder Problem'
+                  : 'Right-Angled Triangle & Trigonometry',
+                primitives: [
+                  { kind: 'polygon', points: [{ x: 76, y: 176 }, { x: 268, y: 176 }, { x: 76, y: 42 }], color: '#7C3AED', fill: 'rgba(124,92,250,0.12)', strokeWidth: 2.6 },
+                  { kind: 'line', x1: 76, y1: 24, x2: 76, y2: 186, color: '#334155', strokeWidth: 3 },
+                  { kind: 'line', x1: 54, y1: 176, x2: 304, y2: 176, color: '#334155', strokeWidth: 3 },
+                  { kind: 'line', x1: 76, y1: 42, x2: 268, y2: 176, color: '#F97316', strokeWidth: 3.4 },
+                  { kind: 'right_angle', x: 76, y: 176, size: 16, dx: 1, dy: -1, color: '#7C3AED' },
+                  { kind: 'arc', cx: 268, cy: 176, r: 34, startAngle: 180, endAngle: 215, label: 'θ', color: '#EF4444' },
+                  { kind: 'text', x: 44, y: 112, content: 'Height (h)', color: '#1E293B', fontSize: 10.5 },
+                  { kind: 'text', x: 172, y: 198, content: 'Base / Ground (b)', color: '#1E293B', fontSize: 10.5 },
+                  { kind: 'text', x: 204, y: 92, content: /\bladder\b/i.test(recentContext) ? 'Ladder (L)' : 'Hypotenuse (c)', color: '#EA580C', fontSize: 11 },
+                  { kind: 'text', x: 104, y: 162, content: '90°', color: '#7C3AED', fontSize: 9.5 },
+                ],
+                caption: 'Pythagoras: h² + b² = L² · Trig: sin(θ) = h/L, cos(θ) = b/L, tan(θ) = h/b.',
+              },
+              ...currentWidgets,
+            ];
+          } else if (/\b(potential\s+difference|voltage|ohm'?s\s+law|voltmeter|electric\s+circuit|resistor)\b/i.test(recentContext)) {
+            parsed.widgets = [
+              {
+                type: 'canvas_diagram',
+                title: 'Electric Circuit — Measuring Potential Difference (V)',
+                primitives: [
+                  { kind: 'rect', x: 56, y: 48, w: 228, h: 118, color: '#334155', fill: 'none', strokeWidth: 2.4 },
+                  // Battery on left
+                  { kind: 'rect', x: 40, y: 86, w: 32, h: 42, color: '#F8FBFF', fill: '#F8FBFF', strokeWidth: 0 },
+                  { kind: 'line', x1: 42, y1: 98, x2: 70, y2: 98, color: '#EF4444', strokeWidth: 3.2 },
+                  { kind: 'line', x1: 49, y1: 112, x2: 63, y2: 112, color: '#1E293B', strokeWidth: 3.2 },
+                  { kind: 'text', x: 30, y: 96, content: '+', color: '#EF4444', fontSize: 12 },
+                  { kind: 'text', x: 30, y: 120, content: '−', color: '#1E293B', fontSize: 12 },
+                  // Resistor on top
+                  { kind: 'rect', x: 132, y: 34, w: 76, h: 28, color: '#7C3AED', fill: '#EDE9FE', strokeWidth: 2.4 },
+                  { kind: 'text', x: 170, y: 52, content: 'R', color: '#5B21B6', fontSize: 12 },
+                  // Voltmeter in parallel across R
+                  { kind: 'line', x1: 116, y1: 48, x2: 116, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
+                  { kind: 'line', x1: 224, y1: 48, x2: 224, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
+                  { kind: 'line', x1: 116, y1: 108, x2: 224, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
+                  { kind: 'circle', cx: 170, cy: 108, r: 17, color: '#0284C7', fill: '#E0F2FE', strokeWidth: 2.4 },
+                  { kind: 'text', x: 170, y: 112, content: 'V', color: '#0369A1', fontSize: 12 },
+                  // Ammeter in series on bottom
+                  { kind: 'circle', cx: 170, cy: 166, r: 17, color: '#16A34A', fill: '#DCFCE7', strokeWidth: 2.4 },
+                  { kind: 'text', x: 170, y: 170, content: 'A', color: '#15803D', fontSize: 12 },
+                  // Current arrow
+                  { kind: 'arrow', x1: 72, y1: 48, x2: 106, y2: 48, color: '#F59E0B', strokeWidth: 2.6 },
+                  { kind: 'text', x: 88, y: 34, content: 'Current I', color: '#D97706', fontSize: 10 },
+                  { kind: 'text', x: 170, y: 204, content: 'V = I × R  (Voltmeter in Parallel, Ammeter in Series)', color: '#334155', fontSize: 10 },
+                ],
+                caption: 'Potential difference (V) is measured by a voltmeter connected in parallel across resistor R: V = W/Q = I × R.',
+              },
+              ...currentWidgets,
+            ];
+          }
         }
       }
 

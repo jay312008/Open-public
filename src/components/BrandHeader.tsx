@@ -6,6 +6,7 @@ import { BrandAssets } from '@/constants/assets';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
 import { AnimatedPressable } from './AnimatedPressable';
+import { StudentAvatar } from './StudentAvatar';
 
 interface BrandHeaderProps {
   showAvatar?: boolean;
@@ -64,7 +65,7 @@ export function BrandHeader({
             ]}
             accessibilityLabel="Open Profile"
           >
-            <Text style={styles.avatarEmoji}>{profile.avatarEmoji}</Text>
+            <StudentAvatar avatarId={profile.avatarEmoji} bgColor={profile.avatarBg} size={36} />
           </AnimatedPressable>
         ) : null}
 

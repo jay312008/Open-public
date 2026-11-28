@@ -25,7 +25,7 @@ export type ChatWidgetType =
   | 'molecule';
 
 export interface DiagramPrimitive {
-  kind: 'line' | 'circle' | 'rect' | 'path' | 'text';
+  kind: 'line' | 'arrow' | 'polygon' | 'arc' | 'right_angle' | 'circle' | 'rect' | 'path' | 'text';
   x1?: number;
   y1?: number;
   x2?: number;
@@ -38,10 +38,19 @@ export interface DiagramPrimitive {
   w?: number;
   h?: number;
   d?: string;
+  points?: { x: number; y: number }[] | string;
+  startAngle?: number; // degrees
+  endAngle?: number;   // degrees
+  size?: number;       // right_angle square size
+  dx?: number;         // right_angle horizontal direction (+1 or -1)
+  dy?: number;         // right_angle vertical direction (+1 or -1)
   content?: string;
+  label?: string;
   color?: string;
   fill?: string;
   dashed?: boolean;
+  strokeWidth?: number;
+  fontSize?: number;
 }
 
 export interface CalcVariable {
@@ -390,10 +399,27 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
   );
 }
 
-/* 2. DYNAMIC VECTOR CANVAS DIAGRAM — AI draws custom shapes, arrows, molecules, forces, circuits, geometry with auto label collision avoidance! */
+/* 2. COMPLETE UNIVERSAL SCIENTIFIC & MATH CANVAS — supports arrows, rays, triangles/polygons, angle arcs, right-angle squares, circuits, waves, forces, lenses & collision-free labels! */
 function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
   const { colors, isDark } = useTheme();
   const primitives = widget.primitives ?? [];
+
+  // Auto-detect coordinate space (340x220 new scientific canvas vs legacy 264x160)
+  let maxX = 0;
+  let maxY = 0;
+  for (const p of primitives) {
+    maxX = Math.max(maxX, p.x ?? 0, p.x1 ?? 0, p.x2 ?? 0, (p.cx ?? 0) + (p.r ?? 0), (p.x ?? 0) + (p.w ?? 0));
+    maxY = Math.max(maxY, p.y ?? 0, p.y1 ?? 0, p.y2 ?? 0, (p.cy ?? 0) + (p.r ?? 0), (p.y ?? 0) + (p.h ?? 0));
+    if (Array.isArray(p.points)) {
+      for (const pt of p.points) {
+        maxX = Math.max(maxX, pt.x);
+        maxY = Math.max(maxY, pt.y);
+      }
+    }
+  }
+  const W = maxX > 266 || maxY > 162 ? 340 : 264;
+  const H = maxX > 266 || maxY > 162 ? 220 : 160;
+  const svgHeight = W === 340 ? 236 : 184;
 
   // Pre-compute non-overlapping positions for text labels so text never collides on top of text!
   const placedTextBoxes: { x0: number; x1: number; y: number }[] = [];
@@ -401,9 +427,10 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
 
   primitives.forEach((p, idx) => {
     if (p.kind !== 'text' || !p.content) return;
-    const estWidth = Math.min(180, p.content.length * 5.6);
-    let x = Math.max(10, Math.min(254 - estWidth / 2, p.x ?? 132));
-    let y = Math.max(16, Math.min(148, p.y ?? 24));
+    const fSize = p.fontSize ?? 10.5;
+    const estWidth = Math.min(W - 24, p.content.length * (fSize * 0.56));
+    let x = Math.max(estWidth / 2 + 8, Math.min(W - estWidth / 2 - 8, p.x ?? W / 2));
+    let y = Math.max(15, Math.min(H - 10, p.y ?? 24));
 
     for (let attempt = 0; attempt < 6; attempt++) {
       const x0 = x - estWidth / 2;
@@ -412,24 +439,52 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
         (b) => Math.abs(b.y - y) < 14 && x0 < b.x1 + 4 && x1 > b.x0 - 4
       );
       if (!collides) break;
-      y = y + 15 <= 150 ? y + 15 : Math.max(14, y - 15);
+      y = y + 15 <= H - 8 ? y + 15 : Math.max(15, y - 15);
     }
 
     placedTextBoxes.push({ x0: x - estWidth / 2, x1: x + estWidth / 2, y });
     resolvedTextPos.set(idx, { x, y });
   });
 
+  const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.055)';
+
   return (
     <View
       style={[
         styles.boardWrap,
-        { backgroundColor: isDark ? '#1A2420' : '#F8FBFF', borderColor: colors.border },
+        { backgroundColor: isDark ? '#16201C' : '#F8FBFF', borderColor: colors.border },
       ]}
     >
       {widget.title && <Text style={[styles.boardTitle, { color: colors.text }]}>{widget.title}</Text>}
-      <Svg width="100%" height={180} viewBox="0 0 264 160">
+      <Svg width="100%" height={svgHeight} viewBox={`0 0 ${W} ${H}`}>
+        {/* Subtle scientific blueprint grid */}
+        {Array.from({ length: Math.floor(W / 32) }, (_, i) => (
+          <Line
+            key={`gx-${i}`}
+            x1={(i + 1) * 32}
+            y1={0}
+            x2={(i + 1) * 32}
+            y2={H}
+            stroke={gridColor}
+            strokeWidth={1}
+          />
+        ))}
+        {Array.from({ length: Math.floor(H / 32) }, (_, i) => (
+          <Line
+            key={`gy-${i}`}
+            x1={0}
+            y1={(i + 1) * 32}
+            x2={W}
+            y2={(i + 1) * 32}
+            stroke={gridColor}
+            strokeWidth={1}
+          />
+        ))}
+
         {primitives.map((p, idx) => {
           const stroke = p.color || '#7C3AED';
+          const sw = p.strokeWidth ?? 2.3;
+
           if (p.kind === 'line') {
             return (
               <Line
@@ -439,25 +494,137 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
                 x2={p.x2 ?? 100}
                 y2={p.y2 ?? 100}
                 stroke={stroke}
-                strokeWidth={2.2}
-                strokeDasharray={p.dashed ? '4,4' : undefined}
+                strokeWidth={sw}
+                strokeDasharray={p.dashed ? '5,4' : undefined}
                 strokeLinecap="round"
               />
             );
           }
+
+          if (p.kind === 'arrow') {
+            const x1 = p.x1 ?? 20;
+            const y1 = p.y1 ?? 20;
+            const x2 = p.x2 ?? 120;
+            const y2 = p.y2 ?? 120;
+            const angle = Math.atan2(y2 - y1, x2 - x1);
+            const headLen = 9;
+            const a1 = angle - Math.PI / 6.5;
+            const a2 = angle + Math.PI / 6.5;
+            const p1x = x2 - headLen * Math.cos(a1);
+            const p1y = y2 - headLen * Math.sin(a1);
+            const p2x = x2 - headLen * Math.cos(a2);
+            const p2y = y2 - headLen * Math.sin(a2);
+            return (
+              <React.Fragment key={idx}>
+                <Line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2 - 4 * Math.cos(angle)}
+                  y2={y2 - 4 * Math.sin(angle)}
+                  stroke={stroke}
+                  strokeWidth={sw}
+                  strokeDasharray={p.dashed ? '5,4' : undefined}
+                  strokeLinecap="round"
+                />
+                <Polygon
+                  points={`${x2},${y2} ${p1x.toFixed(1)},${p1y.toFixed(1)} ${p2x.toFixed(1)},${p2y.toFixed(1)}`}
+                  fill={stroke}
+                />
+              </React.Fragment>
+            );
+          }
+
+          if (p.kind === 'polygon' && p.points) {
+            const ptsStr = Array.isArray(p.points)
+              ? p.points.map((pt) => `${pt.x},${pt.y}`).join(' ')
+              : String(p.points);
+            return (
+              <Polygon
+                key={idx}
+                points={ptsStr}
+                stroke={stroke}
+                strokeWidth={sw}
+                strokeDasharray={p.dashed ? '5,4' : undefined}
+                fill={p.fill ?? 'rgba(124,92,250,0.12)'}
+                strokeLinejoin="round"
+              />
+            );
+          }
+
+          if (p.kind === 'arc') {
+            const cx = p.cx ?? W / 2;
+            const cy = p.cy ?? H / 2;
+            const r = p.r ?? 26;
+            const startRad = ((p.startAngle ?? 0) * Math.PI) / 180;
+            const endRad = ((p.endAngle ?? 60) * Math.PI) / 180;
+            const sx = cx + r * Math.cos(startRad);
+            const sy = cy + r * Math.sin(startRad);
+            const ex = cx + r * Math.cos(endRad);
+            const ey = cy + r * Math.sin(endRad);
+            const sweep = endRad >= startRad ? 1 : 0;
+            const largeArc = Math.abs(endRad - startRad) > Math.PI ? 1 : 0;
+            const midRad = (startRad + endRad) / 2;
+            const lx = cx + (r + 13) * Math.cos(midRad);
+            const ly = cy + (r + 13) * Math.sin(midRad) + 3;
+            return (
+              <React.Fragment key={idx}>
+                <Path
+                  d={`M ${sx.toFixed(1)} ${sy.toFixed(1)} A ${r} ${r} 0 ${largeArc} ${sweep} ${ex.toFixed(1)} ${ey.toFixed(1)}`}
+                  stroke={stroke}
+                  strokeWidth={1.9}
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                {p.label && (
+                  <SvgText
+                    x={lx}
+                    y={ly}
+                    fontSize={10.5}
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    fill={stroke}
+                  >
+                    {p.label}
+                  </SvgText>
+                )}
+              </React.Fragment>
+            );
+          }
+
+          if (p.kind === 'right_angle') {
+            const x = p.x ?? 60;
+            const y = p.y ?? 160;
+            const s = p.size ?? 14;
+            const dx = p.dx ?? 1;
+            const dy = p.dy ?? -1;
+            const d = `M ${x + dx * s} ${y} L ${x + dx * s} ${y + dy * s} L ${x} ${y + dy * s}`;
+            return (
+              <Path
+                key={idx}
+                d={d}
+                stroke={stroke}
+                strokeWidth={1.8}
+                fill="none"
+                strokeLinejoin="miter"
+              />
+            );
+          }
+
           if (p.kind === 'circle') {
             return (
               <Circle
                 key={idx}
-                cx={p.cx ?? 132}
-                cy={p.cy ?? 80}
+                cx={p.cx ?? W / 2}
+                cy={p.cy ?? H / 2}
                 r={p.r ?? 20}
                 stroke={stroke}
-                strokeWidth={2.2}
+                strokeWidth={sw}
+                strokeDasharray={p.dashed ? '4,3' : undefined}
                 fill={p.fill ?? 'rgba(124,92,250,0.12)'}
               />
             );
           }
+
           if (p.kind === 'rect') {
             return (
               <Rect
@@ -466,34 +633,38 @@ function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
                 y={p.y ?? 40}
                 width={p.w ?? 60}
                 height={p.h ?? 36}
-                rx={8}
+                rx={6}
                 stroke={stroke}
-                strokeWidth={2}
+                strokeWidth={sw}
+                strokeDasharray={p.dashed ? '4,3' : undefined}
                 fill={p.fill ?? 'rgba(59,130,246,0.12)'}
               />
             );
           }
+
           if (p.kind === 'path' && p.d) {
             return (
               <Path
                 key={idx}
                 d={p.d}
                 stroke={stroke}
-                strokeWidth={2.4}
+                strokeWidth={sw}
+                strokeDasharray={p.dashed ? '5,4' : undefined}
                 fill={p.fill ?? 'none'}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
             );
           }
+
           if (p.kind === 'text' && p.content) {
-            const pos = resolvedTextPos.get(idx) ?? { x: p.x ?? 132, y: p.y ?? 20 };
+            const pos = resolvedTextPos.get(idx) ?? { x: p.x ?? W / 2, y: p.y ?? 20 };
             return (
               <SvgText
                 key={idx}
                 x={pos.x}
                 y={pos.y}
-                fontSize={10}
+                fontSize={p.fontSize ?? 10.5}
                 fontWeight="bold"
                 textAnchor="middle"
                 fill={p.color || colors.text}

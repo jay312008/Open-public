@@ -5,43 +5,22 @@ import { useRouter } from 'expo-router';
 import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { STUDENT_AVATARS, StudentAvatar, resolveStudentAvatar } from '@/components/StudentAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
-
-const AVATAR_GALLERY: { emoji: string; bg: string; label: string }[] = [
-  { emoji: '🧑🏾‍🎓', bg: '#FFD7CF', label: 'Scholar' },
-  { emoji: '👩🏾‍🎓', bg: '#FDE68A', label: 'Graduate' },
-  { emoji: '🧑🏽‍🔬', bg: '#DCFCE7', label: 'Scientist' },
-  { emoji: '👩🏽‍🔬', bg: '#CCFBF1', label: 'Chemist' },
-  { emoji: '🧑🏾‍💻', bg: '#DBEAFE', label: 'Coder' },
-  { emoji: '👩🏾‍💻', bg: '#E0E7FF', label: 'Engineer' },
-  { emoji: '🧑🏾‍🎨', bg: '#FCE7F3', label: 'Artist' },
-  { emoji: '👩🏾‍🏫', bg: '#F3E8FF', label: 'Mentor' },
-  { emoji: '🧑🏾‍🚀', bg: '#CFFAFE', label: 'Explorer' },
-  { emoji: '👩🏽‍⚕️', bg: '#FFE4E6', label: 'Medic' },
-  { emoji: '🦁', bg: '#FEF3C7', label: 'Lion' },
-  { emoji: '🦉', bg: '#E0F2FE', label: 'Owl' },
-  { emoji: '🦊', bg: '#FFEDD5', label: 'Fox' },
-  { emoji: '🐼', bg: '#F1F5F9', label: 'Panda' },
-  { emoji: '🦋', bg: '#EDE9FE', label: 'Butterfly' },
-  { emoji: '🚀', bg: '#DBEAFE', label: 'Rocket' },
-  { emoji: '⚡', bg: '#FEF9C3', label: 'Spark' },
-  { emoji: '🌍', bg: '#D1FAE5', label: 'Globe' },
-  { emoji: '📚', bg: '#FCE7F3', label: 'Reader' },
-  { emoji: '🏆', bg: '#FEF3C7', label: 'Champion' },
-];
 
 export default function EditProfileScreen() {
   const { colors } = useTheme();
   const { profile, updateProfile } = useApp();
   const router = useRouter();
 
+  const initialAvatar = resolveStudentAvatar(profile.avatarEmoji);
   const [displayName, setDisplayName] = useState(profile.displayName);
   const [username, setUsername] = useState(profile.username);
   const [educationLevel, setEducationLevel] = useState(profile.educationLevel);
   const [bio, setBio] = useState(profile.bio);
-  const [avatarEmoji, setAvatarEmoji] = useState(profile.avatarEmoji);
-  const [avatarBg, setAvatarBg] = useState(profile.avatarBg);
+  const [avatarId, setAvatarId] = useState(initialAvatar.id);
+  const [avatarBg, setAvatarBg] = useState(profile.avatarBg || initialAvatar.bg);
 
   const handleSave = () => {
     updateProfile({
@@ -49,7 +28,7 @@ export default function EditProfileScreen() {
       username: username.trim().replace(/^@/, '') || profile.username,
       educationLevel: educationLevel.trim() || profile.educationLevel,
       bio: bio.trim(),
-      avatarEmoji,
+      avatarEmoji: avatarId,
       avatarBg,
     });
     router.back();
@@ -60,30 +39,30 @@ export default function EditProfileScreen() {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <BrandHeader showBack title="Edit Profile" />
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {/* 20 Curated Student Avatars (No photo upload needed) */}
+          {/* 12 Illustrated Student Avatars (Zero Emojis) */}
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Choose Your Profile Avatar (20 Styles)
+              Choose Your Student Character
             </Text>
             <View style={styles.previewRow}>
               <View style={[styles.bigAvatar, { backgroundColor: avatarBg, borderColor: colors.coral }]}>
-                <Text style={{ fontSize: 36 }}>{avatarEmoji}</Text>
+                <StudentAvatar avatarId={avatarId} bgColor={avatarBg} size={62} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>{displayName || 'Student'}</Text>
                 <Text style={{ color: colors.textMuted, fontSize: 12.5 }}>
-                  Tap any of the 20 curated student avatars below.
+                  Pick any illustrated student character below.
                 </Text>
               </View>
             </View>
             <View style={styles.avatarGrid}>
-              {AVATAR_GALLERY.map((item) => {
-                const selected = avatarEmoji === item.emoji && avatarBg === item.bg;
+              {STUDENT_AVATARS.map((item) => {
+                const selected = avatarId === item.id;
                 return (
                   <AnimatedPressable
-                    key={`${item.emoji}-${item.label}`}
+                    key={item.id}
                     onPress={() => {
-                      setAvatarEmoji(item.emoji);
+                      setAvatarId(item.id);
                       setAvatarBg(item.bg);
                     }}
                     style={[
@@ -95,7 +74,7 @@ export default function EditProfileScreen() {
                       },
                     ]}
                   >
-                    <Text style={{ fontSize: 24 }}>{item.emoji}</Text>
+                    <StudentAvatar avatarId={item.id} bgColor={item.bg} size={46} />
                   </AnimatedPressable>
                 );
               })}

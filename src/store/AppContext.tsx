@@ -62,7 +62,7 @@ const INITIAL_PROFILE: StudentProfile = {
   email: 'alex@learnymol.app',
   bio: 'Focused student preparing for upcoming exams with Molly.',
   educationLevel: 'Secondary / O-Level',
-  avatarEmoji: '🧑🏾‍🎓',
+  avatarEmoji: 'avatar_scholar',
   avatarBg: '#FFD7CF',
   companionId: 'molly',
   xp: 0,

@@ -7,9 +7,10 @@ import { useRouter } from 'expo-router';
 import { AppBackground } from '@/components/AppBackground';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { LayeredFeatureCard } from '@/components/LayeredFeatureCard';
+import { StudentAvatar } from '@/components/StudentAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
-import { getCompanionById, HomeCardAssets } from '@/constants/assets';
+import { CompanionAssets, getCompanionById, HomeCardAssets } from '@/constants/assets';
 
 export default function HomeScreen() {
   const { colors, isDark } = useTheme();
@@ -111,7 +112,7 @@ export default function HomeScreen() {
                   },
                 ]}
               >
-                <Text style={styles.avatarEmoji}>{profile.avatarEmoji}</Text>
+                <StudentAvatar avatarId={profile.avatarEmoji} bgColor={profile.avatarBg} size={42} />
               </View>
               <View style={styles.greetingCol}>
                 <Text style={[styles.greetingTitle, { color: colors.text }]} numberOfLines={1}>
@@ -258,10 +259,14 @@ export default function HomeScreen() {
               style={StyleSheet.absoluteFill}
             />
 
-            {/* Independent Transparent Molly Character Layer */}
+            {/* Independent Transparent Companion Character Layer (updates dynamically when companion changes) */}
             <View pointerEvents="none" style={styles.mollyFgSlot}>
               <Image
-                source={HomeCardAssets.askMollyFg}
+                source={
+                  profile.companionId === 'molly'
+                    ? HomeCardAssets.askMollyFg
+                    : CompanionAssets[profile.companionId]
+                }
                 resizeMode="contain"
                 style={styles.mollyFgImg}
               />

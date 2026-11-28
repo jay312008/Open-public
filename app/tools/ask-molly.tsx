@@ -17,6 +17,7 @@ import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
 import { CompanionAvatar } from '@/components/CompanionAvatar';
+import { StudentAvatar } from '@/components/StudentAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
 import { askMollyAI, MollyChatReply } from '@/lib/aiGateway';
@@ -323,7 +324,7 @@ export default function AskMollyScreen() {
                       </View>
                     </View>
                     <View style={[styles.userAvatar, { backgroundColor: profile.avatarBg }]}>
-                      <Text style={{ fontSize: 17 }}>{profile.avatarEmoji}</Text>
+                      <StudentAvatar avatarId={profile.avatarEmoji} bgColor={profile.avatarBg} size={32} />
                     </View>
                   </View>
                 );
@@ -449,9 +450,12 @@ export default function AskMollyScreen() {
             )}
 
             {loading && (
-              <Text style={[styles.typing, { color: colors.textMuted }]}>
-                {companion.name} is thinking...
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 }}>
+                <CompanionAvatar companionId={profile.companionId} mood="thinking" size={42} />
+                <Text style={[styles.typing, { color: colors.textMuted }]}>
+                  {companion.name} is thinking...
+                </Text>
+              </View>
             )}
           </ScrollView>
 
