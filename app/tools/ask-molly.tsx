@@ -115,7 +115,15 @@ export default function AskMollyScreen() {
         }`
       : undefined;
 
-    const res = await askMollyAI(clean, undefined, memContext);
+    const historyPayload = messages
+      .filter((m) => m.id !== 'welcome')
+      .slice(-10)
+      .map((m) => ({
+        role: m.role,
+        content: [m.heading, m.text, m.equation].filter(Boolean).join('\n'),
+      }));
+
+    const res = await askMollyAI(clean, undefined, memContext, historyPayload);
     const enriched = buildRichMessage(clean, res.data, firstName);
     const botMsg: ChatMsg = {
       id: `a-${Date.now()}`,
@@ -276,15 +284,12 @@ export default function AskMollyScreen() {
 
               return (
                 <View key={msg.id} style={styles.botRow}>
-                  <View style={styles.botAvatarWrap}>
-                    <CompanionAvatar companionId={profile.companionId} size={36} />
+                  <View style={styles.botHeaderRow}>
+                    <CompanionAvatar companionId={profile.companionId} size={28} />
+                    <Text style={[styles.botNameLabel, { color: colors.text }]}>{companion.name}</Text>
+                    <Text style={[styles.botTime, { color: colors.textMuted }]}>{msg.timestamp}</Text>
                   </View>
-                  <View
-                    style={[
-                      styles.botCard,
-                      { backgroundColor: colors.surface, borderColor: colors.border },
-                    ]}
-                  >
+                  <View style={styles.botCard}>
                     {msg.heading && (
                       <Text style={[styles.botHeading, { color: colors.text }]}>{msg.heading}</Text>
                     )}
@@ -368,8 +373,6 @@ export default function AskMollyScreen() {
                         </Text>
                       </View>
                     )}
-
-                    <Text style={[styles.botTime, { color: colors.textMuted }]}>{msg.timestamp}</Text>
                   </View>
                 </View>
               );
@@ -539,38 +542,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  botRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  botRow: { width: '100%', gap: 6, paddingVertical: 6 },
+  botHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  botNameLabel: { fontSize: 14.5, fontWeight: '800', flex: 1 },
   botAvatarWrap: { marginTop: 2 },
   botCard: {
-    flex: 1,
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 14,
-    gap: 10,
+    width: '100%',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    gap: 12,
   },
-  botHeading: { fontSize: 15, fontWeight: '800', lineHeight: 20 },
-  botBody: { fontSize: 14, lineHeight: 20 },
+  botHeading: { fontSize: 18, fontWeight: '900', lineHeight: 24, letterSpacing: -0.2 },
+  botBody: { fontSize: 16, lineHeight: 25 },
   formulaPill: {
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     alignItems: 'center',
   },
-  formulaText: { fontSize: 15, fontWeight: '800', textAlign: 'center' },
-  stepsBlock: { gap: 8 },
-  guideLabel: { fontSize: 13, fontWeight: '600' },
-  stepItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
+  formulaText: { fontSize: 16.5, fontWeight: '800', textAlign: 'center', lineHeight: 24 },
+  stepsBlock: { gap: 11 },
+  guideLabel: { fontSize: 14.5, fontWeight: '700' },
+  stepItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   stepNumCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 1,
+    marginTop: 2,
   },
-  stepNumText: { fontSize: 12, fontWeight: '800' },
-  stepTitle: { fontSize: 13.5, fontWeight: '800' },
-  stepDetail: { fontSize: 12.5, lineHeight: 17, marginTop: 1 },
+  stepNumText: { fontSize: 13, fontWeight: '800' },
+  stepTitle: { fontSize: 15.5, fontWeight: '800', lineHeight: 22 },
+  stepDetail: { fontSize: 15, lineHeight: 23, marginTop: 2 },
   graphBox: {
     borderRadius: 16,
     borderWidth: 1,
@@ -581,13 +585,13 @@ const styles = StyleSheet.create({
   graphCaption: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   exampleBox: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 14,
-    padding: 10,
+    alignItems: 'flex-start',
+    gap: 10,
+    borderRadius: 16,
+    padding: 13,
   },
-  exampleText: { flex: 1, fontSize: 13, lineHeight: 18 },
-  botTime: { fontSize: 10.5, textAlign: 'right' },
+  exampleText: { flex: 1, fontSize: 15, lineHeight: 23 },
+  botTime: { fontSize: 11 },
   starterWrap: { gap: 8, marginTop: 4 },
   starterChip: {
     flexDirection: 'row',

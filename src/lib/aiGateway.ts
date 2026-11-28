@@ -171,6 +171,7 @@ export async function generateTopicNotesAPI(input: {
   level: string;
   topic: string;
   mode?: 'initial' | 'continue';
+  previousSections?: string[];
 }): Promise<AIResponse<GeneratedTopicNotes>> {
   if (isLiveAIGatewayConfigured) {
     const remote = await postToGatewayDetailed<GeneratedTopicNotes>('/topic-notes', input);
@@ -253,13 +254,15 @@ export async function gradeEssayAnswerAPI(input: {
 export async function askMollyAI(
   question: string,
   subject?: string,
-  learningContext?: string
+  learningContext?: string,
+  history?: { role: 'user' | 'assistant'; content: string }[]
 ): Promise<AIResponse<MollyChatReply>> {
   if (isLiveAIGatewayConfigured) {
     const remote = await postToGatewayDetailed<MollyChatReply>('/chat', {
       question,
       subject,
       learningContext,
+      history,
     });
     if (remote.data && remote.data.text) {
       return { data: sanitizeMollyReply(remote.data), source: 'live-gateway' };

@@ -119,6 +119,14 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       const question = String(body.question ?? '').trim();
       const subject = body.subject ? String(body.subject) : 'general studies';
       const learningContext = body.learningContext ? String(body.learningContext).slice(0, 800) : '';
+      const rawHistory = Array.isArray(body.history) ? body.history : [];
+      const historyMsgs: ChatMessage[] = rawHistory
+        .slice(-10)
+        .filter((m): m is { role: string; content: string } => Boolean(m && typeof m === 'object' && 'content' in m))
+        .map((m) => ({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: String(m.content).slice(0, 700),
+        }));
 
       const userPrompt = [
         subject !== 'general studies' ? `[Subject: ${subject}]` : '',
@@ -133,8 +141,9 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           {
             role: 'system',
             content:
-              'You are Molly, a warm, orderly AI tutor in LearnyMol. Return ONLY raw valid JSON (no markdown fences, no LaTeX backslashes — use Unicode symbols like Ω, θ, π, ², ×) with schema: { "heading": string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Keep explanations clean and orderly. Generate DYNAMIC widgets tailored strictly to the exact question (never reuse an unrelated graph!): Widget types: (1) { "type":"function_plot", "title":string, "expression":string (valid math in x like "2*x+3", "sin(x)", "x^3-3*x", "x^2-4*x+3"), "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } (2) { "type":"canvas_diagram", "title":string, "primitives":[{"kind":"line"|"circle"|"rect"|"path"|"text","x1"?:n,"y1"?:n,"x2"?:n,"y2"?:n,"cx"?:n,"cy"?:n,"r"?:n,"x"?:n,"y"?:n,"w"?:n,"h"?:n,"d"?:s,"content"?:s,"color"?:s,"fill"?:s}], "caption":string } on a 264x150 canvas (3) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (4) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (5) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }. Omit widgets for simple greetings.',
+              'You are Molly, a warm, attentive, 1-on-1 human-like tutor in LearnyMol. RULES: (1) ALWAYS listen carefully to the student\'s exact message and the conversation history — NEVER switch to an unrelated topic! (2) Talk naturally like a caring teacher sitting beside the student: clear, simple English, never robotic or overly dense. (3) For math/science equations, put each step on its own clean line so nothing is squeezed together. (4) NEVER use LaTeX backslashes (no \\rightarrow, \\frac, \\neq, \\sqrt, no $ signs) — use plain Unicode symbols (→, ≠, ≤, ≥, √, ±, ², ³, π, Ω, θ, ×, ÷). (5) If the student says "can you draw..." or asks for a visual/diagram/graph of what you were just discussing, draw THAT exact topic using a widget! Return ONLY raw valid JSON with schema: { "heading"?: string, "text": string, "equation"?: string, "steps"?: [{ "title": string, "detail": string }], "example"?: string, "tip"?: string, "widgets"?: Widget[] }. Keep steps/example/tip optional — only include them when they genuinely help answer the student\'s question. Widget types: (1) { "type":"function_plot", "title":string, "expression":string, "xMin"?:number, "xMax"?:number, "points"?:[{"x":number,"y":number,"label":string}], "caption":string } (2) { "type":"canvas_diagram", "title":string, "primitives":[{"kind":"line"|"circle"|"rect"|"path"|"text","x1"?:n,"y1"?:n,"x2"?:n,"y2"?:n,"cx"?:n,"cy"?:n,"r"?:n,"x"?:n,"y"?:n,"w"?:n,"h"?:n,"d"?:s,"content"?:s,"color"?:s,"fill"?:s}], "caption":string } on a 264x150 canvas (3) { "type":"chart", "title":string, "labels":string[], "values":number[], "unit"?:string, "caption":string } (4) { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":number, "amplitude":number, "caption":string } (5) { "type":"calculator", "title":string, "formulaExpr":string, "resultLabel":string, "variables":[{"name":string,"label":string,"defaultValue":number}] }.',
           },
+          ...historyMsgs,
           {
             role: 'user',
             content: userPrompt,
@@ -149,11 +158,16 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           return s
             .replace(/\\\\/g, '\\')
             .replace(/\\text\{([^}]+)\}/g, '$1')
-            .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)')
+            .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1) / ($2)')
             .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+            .replace(/\\rightarrow|\\to/g, '→')
+            .replace(/\\leftarrow/g, '←')
+            .replace(/\\leftrightarrow/g, '↔')
+            .replace(/\\Rightarrow/g, '⇒')
             .replace(/\\neq/g, '≠')
-            .replace(/\\leq/g, '≤')
-            .replace(/\\geq/g, '≥')
+            .replace(/\\leq|\\le\b/g, '≤')
+            .replace(/\\geq|\\ge\b/g, '≥')
+            .replace(/\\approx/g, '≈')
             .replace(/\\Delta/g, 'Δ')
             .replace(/\\Omega/g, 'Ω')
             .replace(/\\pi/g, 'π')
@@ -163,11 +177,15 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             .replace(/\\lambda/g, 'λ')
             .replace(/\\infty/g, '∞')
             .replace(/\\times/g, '×')
+            .replace(/\\div/g, '÷')
             .replace(/\\cdot/g, '·')
             .replace(/\\pm/g, '±')
+            .replace(/\\degree|\^\\circ/g, '°')
             .replace(/\\sin/g, 'sin')
             .replace(/\\cos/g, 'cos')
             .replace(/\\tan/g, 'tan')
+            .replace(/\\left|\\right/g, '')
+            .replace(/\\([a-zA-Z]+)/g, '')
             .replace(/\^2\b/g, '²')
             .replace(/\^3\b/g, '³')
             .replace(/\$/g, '')
@@ -368,19 +386,22 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       const level = String(body.level ?? 'O-Level');
       const topic = String(body.topic ?? 'Core Topic');
       const mode = String(body.mode ?? 'initial'); // 'initial' | 'continue'
+      const previousSections = Array.isArray(body.previousSections)
+        ? body.previousSections.map(String).slice(0, 20)
+        : [];
       const reply = await callNvidia(
         [
           {
             role: 'system',
             content:
-              'You are Molly, a clear academic notes author. Return ONLY raw valid JSON (no markdown fences, no LaTeX backslashes — use Unicode symbols like ², ×, Ω, π) with schema: { "title": string, "sections": [{ "heading": string, "body": string }], "workedExample": string, "examTip": string }.',
+              'You are Molly, a warm, crystal-clear academic teacher. Return ONLY raw valid JSON (no markdown fences, NEVER use LaTeX backslashes — use Unicode symbols like →, ², ×, Ω, π, ≠) with schema: { "title": string, "sections": [{ "heading": string, "body": string }], "workedExample": string, "examTip": string }.',
           },
           {
             role: 'user',
             content:
               mode === 'continue'
-                ? `Write an additional deeper continuation explanation with a fresh exam worked example for ${level} ${subject} — "${topic}" (do not repeat basic definitions).`
-                : `Write clear, structured exam-ready study notes for ${level} ${subject} — "${topic}" with 3 concise sections, 1 worked example, and 1 examiner tip.`,
+                ? `Write the NEXT continuation part of the study notes for ${level} ${subject} — "${topic}". STRICTLY DO NOT repeat any of these already-covered sections: [${previousSections.join(', ')}]. Teach brand-new subtopics, deeper applications, and a fresh worked example.`
+                : `Write clear, student-friendly exam study notes for ${level} ${subject} — "${topic}" with 3 concise sections, 1 clear worked example (each step on its own line), and 1 examiner tip.`,
           },
         ],
         1400,
