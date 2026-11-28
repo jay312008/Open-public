@@ -335,17 +335,60 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         }
       }
 
-      // Sanitize broken function_plot widgets (e.g., if model emitted "sin(theta2) = (n1/n2) * sin(theta1)" which renders as an empty cross)
+      // Sanitize broken function_plot & empty/malformed canvas_diagram widgets so empty grids NEVER appear
       if (Array.isArray(parsed.widgets)) {
         const ALLOWED_IDENTS = new Set(['x', 'sin', 'cos', 'tan', 'sqrt', 'abs', 'log', 'ln', 'exp', 'pi', 'e']);
-        parsed.widgets = parsed.widgets.filter((w: unknown) => {
-          const obj = w as { type?: string; expression?: string };
-          if (obj?.type !== 'function_plot') return true;
-          const expr = String(obj.expression ?? '').trim();
-          if (!expr || expr.includes('=')) return false;
-          const idents = expr.toLowerCase().match(/[a-z_][a-z0-9_]*/g) ?? [];
-          return idents.every((id) => ALLOWED_IDENTS.has(id));
-        });
+        const VALID_KINDS = new Set(['line', 'arrow', 'polygon', 'arc', 'right_angle', 'circle', 'rect', 'path', 'text']);
+        parsed.widgets = parsed.widgets
+          .map((w: unknown) => {
+            const obj = w as Record<string, unknown>;
+            if (obj?.type === 'canvas_diagram' && Array.isArray(obj.primitives)) {
+              const norm = obj.primitives
+                .map((p: unknown) => {
+                  const r = p as Record<string, unknown>;
+                  const kind = String(r.kind ?? r.type ?? '').toLowerCase();
+                  return VALID_KINDS.has(kind)
+                    ? { ...r, kind, color: r.color ?? r.stroke, content: r.content ?? r.text ?? r.label }
+                    : null;
+                })
+                .filter(Boolean);
+              return { ...obj, primitives: norm };
+            }
+            return obj;
+          })
+          .filter((w: unknown) => {
+            const obj = w as { type?: string; expression?: string; primitives?: unknown[] };
+            if (obj?.type === 'canvas_diagram') {
+              return Array.isArray(obj.primitives) && obj.primitives.length >= 2;
+            }
+            if (obj?.type !== 'function_plot') return true;
+            const expr = String(obj.expression ?? '').trim();
+            if (!expr || expr.includes('=')) return false;
+            const idents = expr.toLowerCase().match(/[a-z_][a-z0-9_]*/g) ?? [];
+            return idents.every((id) => ALLOWED_IDENTS.has(id));
+          });
+      }
+
+      // Auto-upgrade Wave diagram requests to the interactive Wave widget if no wave widget was included
+      if (asksVisual && /\b(wave|waves|transverse|longitudinal|wavelength|crest|trough|amplitude)\b/i.test(recentContext) && !/\b(echo|refract|deflect|mirror)\b/i.test(recentContext)) {
+        const currentWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        const hasWave = currentWidgets.some((w: unknown) => (w as { type?: string })?.type === 'wave');
+        if (!hasWave) {
+          const isLongitudinal = /\blongitudinal\b/i.test(question) && !/\btransverse\b/i.test(question);
+          parsed.widgets = [
+            {
+              type: 'wave',
+              title: isLongitudinal
+                ? 'Interactive Longitudinal Wave (Compressions & Rarefactions)'
+                : 'Interactive Transverse Wave (Crest, Trough, Amplitude & Wavelength)',
+              variant: isLongitudinal ? 'longitudinal' : 'transverse',
+              frequency: 2,
+              amplitude: 34,
+              caption: 'Adjust frequency and amplitude interactively to see how wavelength and wave height change.',
+            },
+            ...currentWidgets.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
+          ];
+        }
       }
 
       // Ensure rich textbook-accurate 340x220 scientific canvas diagrams for Optics (Refraction/Reflection), Echo, Geometry/Ladder, and Potential Difference/Circuits

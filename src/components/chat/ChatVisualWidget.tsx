@@ -402,7 +402,35 @@ function DynamicFunctionPlotWidget({ widget }: { widget: ChatWidgetSpec }) {
 /* 2. COMPLETE UNIVERSAL SCIENTIFIC & MATH CANVAS — supports arrows, rays, triangles/polygons, angle arcs, right-angle squares, circuits, waves, forces, lenses & collision-free labels! */
 function DynamicCanvasDiagramWidget({ widget }: { widget: ChatWidgetSpec }) {
   const { colors, isDark } = useTheme();
-  const primitives = widget.primitives ?? [];
+  const rawPrimitives = Array.isArray(widget.primitives) ? widget.primitives : [];
+
+  // Normalize common LLM field aliases (e.g. "type" instead of "kind", "stroke" instead of "color", "text"/"label" instead of "content")
+  const primitives: DiagramPrimitive[] = rawPrimitives
+    .map((raw) => {
+      const r = raw as unknown as Record<string, unknown>;
+      const kind = String(r.kind ?? r.type ?? '').toLowerCase() as DiagramPrimitive['kind'];
+      if (!kind) return null;
+      return {
+        ...raw,
+        kind,
+        color: (r.color ?? r.stroke) as string | undefined,
+        content: (r.content ?? r.text ?? r.label) as string | undefined,
+        w: (r.w ?? r.width) as number | undefined,
+        h: (r.h ?? r.height) as number | undefined,
+      } as DiagramPrimitive;
+    })
+    .filter((p): p is DiagramPrimitive => {
+      if (!p) return false;
+      const validKinds = new Set(['line', 'arrow', 'polygon', 'arc', 'right_angle', 'circle', 'rect', 'path', 'text']);
+      if (!validKinds.has(p.kind)) return false;
+      if (p.kind === 'path' && !p.d) return false;
+      if (p.kind === 'text' && !p.content) return false;
+      if (p.kind === 'polygon' && !p.points) return false;
+      return true;
+    });
+
+  // Never render a blank empty grid if there are no drawable primitives!
+  if (primitives.length === 0) return null;
 
   // Auto-detect coordinate space (340x220 new scientific canvas vs legacy 264x160)
   let maxX = 0;
