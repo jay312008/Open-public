@@ -339,56 +339,21 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         }
       }
 
-      // Auto-upgrade chemical bonding visual requests to crisp dot-and-cross molecule shells
-      // instead of messy raw canvas_diagram circles/overlapping text
       const recentContext = [
-        ...historyMsgs.slice(-4).map((m) => m.content),
+        ...historyMsgs.slice(-4).map((m) => (typeof m.content === 'string' ? m.content : '')),
         question,
         String(parsed.heading ?? ''),
       ].join(' ');
-      const asksVisual = /\b(draw|diagram|visual|graph|sketch|illustrat|represent|show|dot[\s-]and[\s-]cross|shell)\b/i.test(question);
-      const isBondingTopic = /\b(ionic\s+bond|covalent\s+bond|chemical\s+bond|dot[\s-]and[\s-]cross|electron\s+transfer|nacl)\b/i.test(recentContext);
-      if (asksVisual && isBondingTopic) {
-        const existing = Array.isArray(parsed.widgets) ? parsed.widgets : [];
-        const hasMolecule = existing.some((w: unknown) => (w as { type?: string })?.type === 'molecule');
-        if (!hasMolecule) {
-          const isCovalentOnly = /\bcovalent\b/i.test(recentContext) && !/\bionic\b/i.test(recentContext);
-          const bondingWidget = isCovalentOnly
-            ? {
-                type: 'molecule',
-                title: 'Covalent Bonding — Water (H₂O) Shared Electron Pairs',
-                atoms: [
-                  { id: 'h1', symbol: 'H', x: 75, y: 120, color: '#0EA5E9' },
-                  { id: 'o1', symbol: 'O', x: 160, y: 72, color: '#EF4444' },
-                  { id: 'h2', symbol: 'H', x: 245, y: 120, color: '#0EA5E9' },
-                ],
-                bonds: [
-                  { from: 'h1', to: 'o1', order: 1 },
-                  { from: 'o1', to: 'h2', order: 1 },
-                ],
-                caption: 'Oxygen shares one pair of electrons with each Hydrogen atom to complete its outer shell.',
-              }
-            : {
-                type: 'molecule',
-                title: 'Ionic Bonding — Dot-and-Cross Diagram (Na⁺Cl⁻)',
-                shells: [
-                  { symbol: 'Na', charge: '+', rings: [2, 8], style: 'cross' },
-                  { symbol: 'Cl', charge: '−', rings: [2, 8, 8], style: 'dot' },
-                ],
-                caption: 'Sodium (2,8,1) transfers 1 outer electron (×) to Chlorine (2,8,7), forming stable Na⁺ [2,8] and Cl⁻ [2,8,8] ions.',
-              };
-          parsed.widgets = [
-            bondingWidget,
-            ...existing.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
-          ];
-        }
-      }
+      const asksVisual =
+        /\b(draw|diagram|visual|graph|sketch|illustrat|represent|show\s+me|symbol|dot[\s-]and[\s-]cross|shell|table|chart|plot|structure|where\s+is\s+the\s+(diagram|symbol|graph|visual|picture|drawing))\b/i.test(
+          question
+        );
 
       // Sanitize broken function_plot & empty/malformed canvas_diagram widgets so empty grids NEVER appear
-      if (Array.isArray(parsed.widgets)) {
+      const sanitizeWidgets = (list: unknown[]): unknown[] => {
         const ALLOWED_IDENTS = new Set(['x', 'sin', 'cos', 'tan', 'sqrt', 'abs', 'log', 'ln', 'exp', 'pi', 'e']);
         const VALID_KINDS = new Set(['line', 'arrow', 'polygon', 'arc', 'right_angle', 'circle', 'rect', 'path', 'text']);
-        parsed.widgets = parsed.widgets
+        return list
           .map((w: unknown) => {
             const obj = w as Record<string, unknown>;
             if (obj?.type === 'canvas_diagram' && Array.isArray(obj.primitives)) {
@@ -410,391 +375,60 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             if (obj?.type === 'canvas_diagram') {
               return Array.isArray(obj.primitives) && obj.primitives.length >= 2;
             }
+            if (obj?.type === 'asset_ref') return false; // Never force preloaded default assets
             if (obj?.type !== 'function_plot') return true;
             const expr = String(obj.expression ?? '').trim();
             if (!expr || expr.includes('=')) return false;
             const idents = expr.toLowerCase().match(/[a-z_][a-z0-9_]*/g) ?? [];
             return idents.every((id) => ALLOWED_IDENTS.has(id));
           });
+      };
+
+      if (Array.isArray(parsed.widgets)) {
+        parsed.widgets = sanitizeWidgets(parsed.widgets);
       }
 
-      // INTELLIGENT VISUALIZATION DECISION ENGINE (Sections 3, 5, 6, 11, 12, 16)
-      // 1. Respect text-only factual/definition questions (e.g., "What is the definition of photosynthesis?") unless visual explicitly requested
+      // Respect simple factual/definition-only questions unless user asked for a visual
       const isDefinitionOnly =
-        /^\s*(what\s+is\s+the\s+definition\s+of|define\b|what\s+does\s+.+\s+mean|who\s+discovered|when\s+did)\b/i.test(question) &&
-        !asksVisual;
+        /^\s*(what\s+is\s+the\s+definition\s+of|define\b|what\s+does\s+.+\s+mean|who\s+discovered|when\s+did)\b/i.test(
+          question
+        ) && !asksVisual;
 
       if (isDefinitionOnly) {
         parsed.widgets = [];
       } else {
-        const currentWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
-        const hasType = (t: string) => currentWidgets.some((w: unknown) => (w as { type?: string })?.type === t);
-        const hasRichCanvas = currentWidgets.some(
-          (w: unknown) =>
-            (w as { type?: string; primitives?: unknown[] })?.type === 'canvas_diagram' &&
-            Array.isArray((w as { primitives?: unknown[] }).primitives) &&
-            ((w as { primitives?: unknown[] }).primitives?.length ?? 0) >= 5
-        );
-
-        // A. Interactive 3D Models (Water H2O, Methane CH4, 3D Cube, 3D Pyramid)
-        if (/\b(3d|three[\s-]dimensional)\b/i.test(question) || /\b(water\s+molecule|h2o\s+structure|methane\s+structure|tetrahedral)\b/i.test(question)) {
-          if (!hasType('model_3d')) {
-            const preset3d = /\bmethane|ch4\b/i.test(question)
-              ? 'methane_ch4'
-              : /\bcube\b/i.test(question)
-                ? 'cube_3d'
-                : /\bpyramid\b/i.test(question)
-                  ? 'pyramid_3d'
-                  : 'water_h2o';
-            parsed.widgets = [{ type: 'model_3d', preset3d }, ...currentWidgets];
-          }
-        }
-        // B. Interactive Code-Based Simulation (Projectile Motion)
-        else if (/\b(projectile|trajectory|launch\s+angle|initial\s+velocity)\b/i.test(question)) {
-          if (!hasType('code_sim')) {
-            parsed.widgets = [
-              {
-                type: 'code_sim',
-                title: 'Animated Projectile Motion Simulation',
-                caption: 'Adjust initial velocity (v₀) and launch angle (θ) to observe Range R = (v₀²·sin 2θ)/g, Max Height, and parabolic trajectory live.',
-                codeExplanation:
-                  'This HTML5 Canvas simulation splits initial velocity into horizontal vx = v₀·cos(θ) (constant) and vertical vy = v₀·sin(θ) (accelerated downward by g = 9.81 m/s²), updating position (x, y) each frame.',
-              },
-              ...currentWidgets,
-            ];
-          }
-        }
-        // C. Preloaded Educational Asset Library (Plant Cell, Human Heart, River Meander, Newton's 2nd Law, Atom)
-        else if (/\bplant\s+cell\b/i.test(question)) {
-          if (!hasType('asset_ref')) {
-            parsed.widgets = [{ type: 'asset_ref', assetId: 'plant_cell' }, ...currentWidgets];
-          }
-        } else if (/\bhuman\s+heart\b|\bheart\s+structure\b|\bchambers\s+of\s+the\s+heart\b/i.test(question)) {
-          if (!hasType('asset_ref')) {
-            parsed.widgets = [{ type: 'asset_ref', assetId: 'human_heart', animation: 'blood_flow' }, ...currentWidgets];
-          }
-        } else if (/\briver\s+meander\b|\bmeander\b/i.test(question)) {
-          if (!hasType('asset_ref')) {
-            parsed.widgets = [{ type: 'asset_ref', assetId: 'river_meander', animation: 'river_flow' }, ...currentWidgets];
-          }
-        } else if (/\bnewton'?s\s+second\s+law\b|\bf\s*=\s*ma\b|\bfree[\s-]body\s+diagram\b/i.test(question)) {
-          if (!hasType('asset_ref')) {
-            parsed.widgets = [{ type: 'asset_ref', assetId: 'newtons_second_law', animation: 'force_motion' }, ...currentWidgets];
-          }
-        } else if (/\bstructure\s+of\s+an?\s+atom\b|\bbohr\s+model\b|\bprotons\s+and\s+neutrons\b/i.test(question)) {
-          if (!hasType('asset_ref') && !hasType('molecule')) {
-            parsed.widgets = [{ type: 'asset_ref', assetId: 'atom_bohr' }, ...currentWidgets];
-          }
-        }
-        // D. Multiple Visualizations: Open Circuit vs Closed Circuit (2 independent diagrams!)
-        else if (/\bopen\s+circuit\b/i.test(question) && /\bclosed\s+circuit\b/i.test(question)) {
-          const openCircuit = {
-            type: 'canvas_diagram',
-            title: '1. Open Electrical Circuit (Switch Open — No Current)',
-            primitives: [
-              { kind: 'line', x1: 56, y1: 52, x2: 140, y2: 52, color: '#334155', strokeWidth: 2.5 },
-              { kind: 'line', x1: 140, y1: 52, x2: 186, y2: 26, color: '#EF4444', strokeWidth: 3 },
-              { kind: 'line', x1: 192, y1: 52, x2: 284, y2: 52, color: '#334155', strokeWidth: 2.5 },
-              { kind: 'line', x1: 284, y1: 52, x2: 284, y2: 164, color: '#334155', strokeWidth: 2.5 },
-              { kind: 'line', x1: 284, y1: 164, x2: 56, y2: 164, color: '#334155', strokeWidth: 2.5 },
-              { kind: 'line', x1: 56, y1: 164, x2: 56, y2: 52, color: '#334155', strokeWidth: 2.5 },
-              { kind: 'circle', cx: 170, cy: 164, r: 18, color: '#64748B', fill: '#F1F5F9', strokeWidth: 2.4 },
-              { kind: 'text', x: 170, y: 168, content: 'OFF', color: '#64748B', fontSize: 10 },
-              { kind: 'text', x: 166, y: 20, content: 'Open Switch (Gap)', color: '#DC2626', fontSize: 10.5 },
-              { kind: 'text', x: 170, y: 202, content: 'Break in path stops electrons — Lamp stays OFF (I = 0 A)', color: '#475569', fontSize: 10 },
-            ],
-            caption: 'In an open circuit, the broken path prevents continuous charge flow.',
-          };
-          const closedCircuit = {
-            type: 'canvas_diagram',
-            title: '2. Closed Electrical Circuit (Switch Closed — Current Flows)',
-            animation: 'current_flow',
-            primitives: [
-              { kind: 'rect', x: 56, y: 52, w: 228, h: 112, color: '#16A34A', fill: 'none', strokeWidth: 2.5 },
-              { kind: 'arrow', x1: 72, y1: 52, x2: 268, y2: 52, color: '#16A34A', strokeWidth: 2.8 },
-              { kind: 'arrow', x1: 284, y1: 68, x2: 284, y2: 152, color: '#16A34A', strokeWidth: 2.8 },
-              { kind: 'arrow', x1: 268, y1: 164, x2: 72, y2: 164, color: '#16A34A', strokeWidth: 2.8 },
-              { kind: 'circle', cx: 170, cy: 164, r: 18, color: '#F59E0B', fill: '#FEF08A', strokeWidth: 2.6 },
-              { kind: 'text', x: 170, y: 168, content: 'ON', color: '#B45309', fontSize: 10.5 },
-              { kind: 'text', x: 170, y: 34, content: 'Closed Switch → Current I Flows', color: '#15803D', fontSize: 10.5 },
-              { kind: 'text', x: 170, y: 202, content: 'Complete loop allows continuous current — Lamp glows ON', color: '#15803D', fontSize: 10 },
-            ],
-            caption: 'In a closed circuit, the complete conducting loop allows continuous current flow.',
-          };
-          parsed.widgets = [openCircuit, closedCircuit];
-        }
-        // E. Interactive Wave Simulation
-        else if (
-          /\b(wave|waves|transverse|longitudinal|wavelength|crest|trough|amplitude)\b/i.test(question) &&
-          !/\b(echo|refract|deflect|mirror)\b/i.test(question)
-        ) {
-          if (!hasType('wave')) {
-            const isLongitudinal = /\blongitudinal\b/i.test(question) && !/\btransverse\b/i.test(question);
-            parsed.widgets = [
-              {
-                type: 'wave',
-                title: isLongitudinal
-                  ? 'Interactive Longitudinal Wave (Compressions & Rarefactions)'
-                  : 'Interactive Transverse Wave (Crest, Trough, Amplitude & Wavelength)',
-                variant: isLongitudinal ? 'longitudinal' : 'transverse',
-                frequency: 2,
-                amplitude: 34,
-                caption: 'Adjust frequency and amplitude interactively to see how wavelength and wave height change.',
-              },
-              ...currentWidgets.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
-            ];
-          }
-        }
-        // F. Deterministic Right-Angled Triangle / Pythagoras / Ladder Problem
-        else if (/\b(pythagor|right[\s-]angled?\s+triangle|hypotenuse|ladder)\b/i.test(question) && !hasRichCanvas) {
-          const nums = (question.match(/\b(\d+(?:\.\d+)?)\s*(cm|m|mm|km|ft|in)?\b/gi) ?? [])
-            .map((m) => {
-              const p = m.match(/(\d+(?:\.\d+)?)\s*(cm|m|mm|km|ft|in)?/i);
-              return p ? { val: parseFloat(p[1]), unit: p[2] || 'cm' } : null;
-            })
-            .filter((x): x is { val: number; unit: string } => Boolean(x && x.val > 0 && x.val < 10000));
-
-          if (nums.length >= 2) {
-            const hVal = nums[0].val;
-            const bVal = nums[1].val;
-            const unit = nums[0].unit || 'cm';
-            const hyp = Math.sqrt(hVal * hVal + bVal * bVal);
-            const hypStr = Number.isInteger(hyp) ? String(hyp) : hyp.toFixed(2);
-            const maxDim = Math.max(hVal, bVal, 1);
-            const drawW = Math.max(85, Math.min(195, (bVal / maxDim) * 185));
-            const drawH = Math.max(70, Math.min(130, (hVal / maxDim) * 125));
-            const x0 = 84;
-            const y0 = 176;
-            const x1 = x0 + drawW;
-            const yTop = y0 - drawH;
-            parsed.widgets = [
-              {
-                type: 'canvas_diagram',
-                title: `Right-Angled Triangle (${hVal} ${unit} × ${bVal} ${unit} → ${hypStr} ${unit})`,
-                primitives: [
-                  { kind: 'polygon', points: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x0, y: yTop }], color: '#7C3AED', fill: 'rgba(124,92,250,0.12)', strokeWidth: 2.6 },
-                  { kind: 'line', x1: x0, y1: yTop, x2: x1, y2: y0, color: '#FF6B4A', strokeWidth: 3.4 },
-                  { kind: 'right_angle', x: x0, y: y0, size: 15, dx: 1, dy: -1, color: '#7C3AED' },
-                  { kind: 'text', x: x0 - 34, y: (y0 + yTop) / 2, content: `${hVal} ${unit}`, color: '#1E293B', fontSize: 11 },
-                  { kind: 'text', x: (x0 + x1) / 2, y: y0 + 20, content: `${bVal} ${unit}`, color: '#1E293B', fontSize: 11 },
-                  { kind: 'text', x: (x0 + x1) / 2 + 26, y: (y0 + yTop) / 2 - 8, content: `c = ${hypStr} ${unit}`, color: '#EA580C', fontSize: 11.5 },
-                  { kind: 'text', x: x0 + 26, y: y0 - 12, content: '90°', color: '#7C3AED', fontSize: 9.5 },
-                ],
-                caption: `Pythagorean Theorem: c = √(${hVal}² + ${bVal}²) = ${hypStr} ${unit}.`,
-              },
-              ...currentWidgets,
-            ];
-          } else {
-            parsed.widgets = [
-              {
-                type: 'canvas_diagram',
-                title: /\bladder\b/i.test(question)
-                  ? 'Right Triangle Model — Leaning Ladder Problem'
-                  : 'Right-Angled Triangle & Trigonometry',
-                primitives: [
-                  { kind: 'polygon', points: [{ x: 76, y: 176 }, { x: 268, y: 176 }, { x: 76, y: 42 }], color: '#7C3AED', fill: 'rgba(124,92,250,0.12)', strokeWidth: 2.6 },
-                  { kind: 'line', x1: 76, y1: 42, x2: 268, y2: 176, color: '#FF6B4A', strokeWidth: 3.4 },
-                  { kind: 'right_angle', x: 76, y: 176, size: 16, dx: 1, dy: -1, color: '#7C3AED' },
-                  { kind: 'arc', cx: 268, cy: 176, r: 34, startAngle: 180, endAngle: 215, label: 'θ', color: '#EF4444' },
-                  { kind: 'text', x: 44, y: 112, content: 'Height (h)', color: '#1E293B', fontSize: 10.5 },
-                  { kind: 'text', x: 172, y: 198, content: 'Base (b)', color: '#1E293B', fontSize: 10.5 },
-                  { kind: 'text', x: 204, y: 92, content: /\bladder\b/i.test(question) ? 'Ladder (L)' : 'Hypotenuse (c)', color: '#EA580C', fontSize: 11 },
-                  { kind: 'text', x: 104, y: 162, content: '90°', color: '#7C3AED', fontSize: 9.5 },
-                ],
-                caption: 'Pythagoras: h² + b² = c² · Trig: sin(θ) = h/c, cos(θ) = b/c, tan(θ) = h/b.',
-              },
-              ...currentWidgets,
-            ];
-          }
-        }
-        // G. Animated Refraction / Reflection of Light, Echo, Potential Difference, Quadratic Graph
-        else if (!hasRichCanvas) {
-          if (/\b(refract|deflect|snell|light\s+bend|air\s+to\s+water|glass\s+block)\b/i.test(recentContext)) {
-            parsed.widgets = [
-              {
-                type: 'canvas_diagram',
-                title: 'Refraction (Deflection) of Light — Air to Water',
-                animation: 'light_ray',
-                primitives: [
-                  { kind: 'rect', x: 16, y: 112, w: 308, h: 94, color: '#0EA5E9', fill: 'rgba(14,165,233,0.14)', strokeWidth: 1.5 },
-                  { kind: 'line', x1: 16, y1: 112, x2: 324, y2: 112, color: '#0284C7', strokeWidth: 2.5 },
-                  { kind: 'line', x1: 170, y1: 18, x2: 170, y2: 204, color: '#64748B', dashed: true, strokeWidth: 1.8 },
-                  { kind: 'arrow', x1: 66, y1: 28, x2: 170, y2: 112, color: '#F59E0B', strokeWidth: 3 },
-                  { kind: 'arrow', x1: 170, y1: 112, x2: 222, y2: 202, color: '#EF4444', strokeWidth: 3 },
-                  { kind: 'arc', cx: 170, cy: 112, r: 34, startAngle: -141, endAngle: -90, label: 'θ₁', color: '#D97706' },
-                  { kind: 'arc', cx: 170, cy: 112, r: 34, startAngle: 60, endAngle: 90, label: 'θ₂', color: '#DC2626' },
-                  { kind: 'text', x: 56, y: 98, content: 'Air (n₁ = 1.00)', color: '#0369A1', fontSize: 10 },
-                  { kind: 'text', x: 64, y: 132, content: 'Water (n₂ = 1.33)', color: '#0369A1', fontSize: 10 },
-                  { kind: 'text', x: 215, y: 30, content: 'Normal (90°)', color: '#64748B', fontSize: 10 },
-                  { kind: 'text', x: 84, y: 24, content: 'Incident Ray', color: '#D97706', fontSize: 10.5 },
-                  { kind: 'text', x: 266, y: 184, content: 'Refracted Ray', color: '#DC2626', fontSize: 10.5 },
-                ],
-                caption: 'Light slows down entering water (n₂ > n₁) and bends toward the normal: n₁·sin(θ₁) = n₂·sin(θ₂).',
-              },
-              ...currentWidgets,
-            ];
-          } else if (/\b(reflect|mirror|law\s+of\s+reflection)\b/i.test(question) && /\b(light|ray|mirror|angle)\b/i.test(question)) {
-            parsed.widgets = [
-              {
-                type: 'canvas_diagram',
-                title: 'Animated Reflection of Light on a Plane Mirror',
-                animation: 'light_ray',
-                primitives: [
-                  { kind: 'rect', x: 24, y: 162, w: 292, h: 16, color: '#475569', fill: 'rgba(100,116,139,0.22)', strokeWidth: 2 },
-                  { kind: 'line', x1: 170, y1: 24, x2: 170, y2: 162, color: '#64748B', dashed: true, strokeWidth: 1.8 },
-                  { kind: 'arrow', x1: 58, y1: 42, x2: 170, y2: 162, color: '#F59E0B', strokeWidth: 3 },
-                  { kind: 'arrow', x1: 170, y1: 162, x2: 282, y2: 42, color: '#10B981', strokeWidth: 3 },
-                  { kind: 'arc', cx: 170, cy: 162, r: 38, startAngle: -133, endAngle: -90, label: 'i', color: '#D97706' },
-                  { kind: 'arc', cx: 170, cy: 162, r: 38, startAngle: -90, endAngle: -47, label: 'r', color: '#059669' },
-                  { kind: 'text', x: 170, y: 196, content: 'Plane Mirror Surface (Angle i = Angle r)', color: '#334155', fontSize: 10.5 },
-                  { kind: 'text', x: 170, y: 18, content: 'Normal', color: '#64748B', fontSize: 10 },
-                  { kind: 'text', x: 76, y: 36, content: 'Incident Ray', color: '#D97706', fontSize: 10.5 },
-                  { kind: 'text', x: 266, y: 36, content: 'Reflected Ray', color: '#059669', fontSize: 10.5 },
-                ],
-                caption: 'Law of Reflection: Angle of incidence (i) = Angle of reflection (r), measured from the normal.',
-              },
-              ...currentWidgets,
-            ];
-          } else if (/\b(echo|sound\s+reflect|reverberation)\b/i.test(question)) {
-            parsed.widgets = [
-              {
-                type: 'canvas_diagram',
-                title: 'Formation of an Echo (Sound Reflection)',
-                animation: 'light_ray',
-                primitives: [
-                  { kind: 'circle', cx: 52, cy: 112, r: 22, color: '#2563EB', fill: 'rgba(37,99,235,0.16)' },
-                  { kind: 'text', x: 52, y: 115, content: 'Source', color: '#1D4ED8', fontSize: 10 },
-                  { kind: 'rect', x: 284, y: 30, w: 28, h: 160, color: '#475569', fill: 'rgba(100,116,139,0.28)' },
-                  { kind: 'text', x: 298, y: 20, content: 'Wall / Cliff', color: '#334155', fontSize: 10 },
-                  { kind: 'arrow', x1: 82, y1: 84, x2: 278, y2: 84, color: '#3B82F6', strokeWidth: 2.8 },
-                  { kind: 'arc', cx: 92, cy: 84, r: 18, startAngle: -45, endAngle: 45, color: '#3B82F6' },
-                  { kind: 'arrow', x1: 278, y1: 140, x2: 82, y2: 140, color: '#EF4444', strokeWidth: 2.8, dashed: true },
-                  { kind: 'arc', cx: 266, cy: 140, r: 18, startAngle: 135, endAngle: 225, color: '#EF4444' },
-                  { kind: 'line', x1: 52, y1: 186, x2: 284, y2: 186, color: '#7C3AED', dashed: true, strokeWidth: 1.6 },
-                  { kind: 'text', x: 178, y: 66, content: 'Original Sound Wave →', color: '#1D4ED8', fontSize: 10.5 },
-                  { kind: 'text', x: 178, y: 162, content: '← Reflected Echo Wave', color: '#DC2626', fontSize: 10.5 },
-                  { kind: 'text', x: 168, y: 204, content: 'Distance d = (v × t) / 2', color: '#7C3AED', fontSize: 11 },
-                ],
-                caption: 'Sound travels distance d to the wall and returns distance d (total 2d), so d = (v × t) / 2.',
-              },
-              ...currentWidgets,
-            ];
-          } else if (/\b(potential\s+difference|voltage|ohm'?s\s+law|voltmeter|electric\s+circuit|resistor)\b/i.test(question)) {
-            parsed.widgets = [
-              {
-                type: 'canvas_diagram',
-                title: 'Electric Circuit — Measuring Potential Difference (V)',
-                animation: 'current_flow',
-                primitives: [
-                  { kind: 'rect', x: 56, y: 48, w: 228, h: 118, color: '#334155', fill: 'none', strokeWidth: 2.4 },
-                  { kind: 'rect', x: 40, y: 86, w: 32, h: 42, color: '#F8FBFF', fill: '#F8FBFF', strokeWidth: 0 },
-                  { kind: 'line', x1: 42, y1: 98, x2: 70, y2: 98, color: '#EF4444', strokeWidth: 3.2 },
-                  { kind: 'line', x1: 49, y1: 112, x2: 63, y2: 112, color: '#1E293B', strokeWidth: 3.2 },
-                  { kind: 'text', x: 30, y: 96, content: '+', color: '#EF4444', fontSize: 12 },
-                  { kind: 'text', x: 30, y: 120, content: '−', color: '#1E293B', fontSize: 12 },
-                  { kind: 'rect', x: 132, y: 34, w: 76, h: 28, color: '#7C3AED', fill: '#EDE9FE', strokeWidth: 2.4 },
-                  { kind: 'text', x: 170, y: 52, content: 'R', color: '#5B21B6', fontSize: 12 },
-                  { kind: 'line', x1: 116, y1: 48, x2: 116, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
-                  { kind: 'line', x1: 224, y1: 48, x2: 224, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
-                  { kind: 'line', x1: 116, y1: 108, x2: 224, y2: 108, color: '#0EA5E9', strokeWidth: 2 },
-                  { kind: 'circle', cx: 170, cy: 108, r: 17, color: '#0284C7', fill: '#E0F2FE', strokeWidth: 2.4 },
-                  { kind: 'text', x: 170, y: 112, content: 'V', color: '#0369A1', fontSize: 12 },
-                  { kind: 'circle', cx: 170, cy: 166, r: 17, color: '#16A34A', fill: '#DCFCE7', strokeWidth: 2.4 },
-                  { kind: 'text', x: 170, y: 170, content: 'A', color: '#15803D', fontSize: 12 },
-                  { kind: 'arrow', x1: 72, y1: 48, x2: 106, y2: 48, color: '#F59E0B', strokeWidth: 2.6 },
-                  { kind: 'text', x: 88, y: 34, content: 'Current I', color: '#D97706', fontSize: 10 },
-                  { kind: 'text', x: 170, y: 204, content: 'V = I × R  (Voltmeter in Parallel, Ammeter in Series)', color: '#334155', fontSize: 10 },
-                ],
-                caption: 'Potential difference (V) is measured by a voltmeter connected in parallel across resistor R: V = W/Q = I × R.',
-              },
-              ...currentWidgets,
-            ];
-          } else if (/\bquadratic\s+(function|graph|equation|parabola)\b/i.test(question) && !hasType('function_plot')) {
-            parsed.widgets = [
-              {
-                type: 'function_plot',
-                title: 'Quadratic Function Graph: y = x² − 4',
-                expression: 'x^2 - 4',
-                xMin: -5,
-                xMax: 5,
-                points: [
-                  { x: -2, y: 0, label: 'Root (-2,0)' },
-                  { x: 0, y: -4, label: 'Vertex (0,-4)' },
-                  { x: 2, y: 0, label: 'Root (2,0)' },
-                ],
-                caption: 'Interactive parabola y = x² − 4. Edit the equation above or trace points below.',
-              },
-              ...currentWidgets,
-            ];
-          }
-        }
-
-        // H. Logic Gates (AND, OR, NOT Symbols + Truth Table) — checks recentContext so follow-ups like "can you show a diagram" or "where is the symbol" work immediately!
-        const finalWidgetsNow = Array.isArray(parsed.widgets) ? parsed.widgets : [];
-        if (
-          /\b(logic\s+gate|and\s+gate|or\s+gate|not\s+gate|nand|nor|xor|truth\s+table)\b/i.test(recentContext) &&
-          !finalWidgetsNow.some((w: unknown) => (w as { assetId?: string })?.assetId === 'logic_gates')
-        ) {
-          parsed.widgets = [
-            { type: 'asset_ref', assetId: 'logic_gates' },
-            {
-              type: 'table',
-              title: 'Basic Logic Gates Truth Table',
-              headers: ['Input A', 'Input B', 'AND (A·B)', 'OR (A+B)', 'NOT A'],
-              rows: [
-                ['0', '0', '0', '0', '1'],
-                ['0', '1', '0', '1', '1'],
-                ['1', '0', '0', '1', '0'],
-                ['1', '1', '1', '1', '0'],
-              ],
-              caption: '0 = False / OFF · 1 = True / ON',
-            },
-            ...finalWidgetsNow.filter((w: unknown) => (w as { type?: string })?.type !== 'canvas_diagram'),
-          ];
-        }
-
-        // I. UNIVERSAL TWO-PASS GUARANTEED VISUAL GENERATOR:
-        // If the student explicitly asked for a diagram/symbol/visual/graph (or asked "where is the symbol/diagram")
-        // and widgets is STILL empty, run a fast dedicated 2nd AI pass solely to draw a crisp 340x220 canvas_diagram!
-        const explicitlyNeedsVisual =
-          asksVisual ||
-          /\b(symbol|where\s+is\s+the\s+(diagram|symbol|graph|visual|picture|drawing))\b/i.test(question);
-        const afterAllWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
-        if (explicitlyNeedsVisual && afterAllWidgets.length === 0) {
+        // PURE 100% DYNAMIC AI VISUAL SYNTHESIZER (ZERO hardcoded/default diagrams!)
+        // Whenever the student asks for a diagram/visual/symbol/structure/graph OR asks a clearly visual question
+        // and the first pass did not produce a valid widget, generate the EXACT custom visual from scratch!
+        const existingWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        if (asksVisual && existingWidgets.length === 0) {
           try {
-            const drawReply = await callNvidia(
+            const synthReply = await callNvidia(
               [
                 {
                   role: 'system',
                   content:
-                    'You are a precision SVG scientific illustrator. Return ONLY raw valid JSON for ONE clean 340x220 diagram: { "type": "canvas_diagram", "title": string, "primitives": [...], "caption": string }. Supported primitives: {"kind":"arrow","x1":n,"y1":n,"x2":n,"y2":n,"color":hex}, {"kind":"line","x1":n,"y1":n,"x2":n,"y2":n,"color":hex,"dashed"?:bool}, {"kind":"rect","x":n,"y":n,"w":n,"h":n,"color":hex,"fill":rgba}, {"kind":"circle","cx":n,"cy":n,"r":n,"color":hex,"fill":rgba}, {"kind":"polygon","points":[{"x":n,"y":n},...],"color":hex,"fill":rgba}, {"kind":"path","d":svgPath,"color":hex,"fill":rgbaOrNone}, {"kind":"text","x":n,"y":n,"content":string,"color":hex,"fontSize":10}. Include at least 6 well-spaced, non-overlapping primitives.',
+                    'You are a precision educational visual generator. NEVER use generic defaults — generate the EXACT diagram, molecule, table, or graph requested by the student from scratch! Return ONLY raw valid JSON: { "widgets": [ ... ] }. Choose the best widget type(s) for the exact request: (1) "canvas_diagram": { "type":"canvas_diagram", "title":string, "primitives":[...], "caption":string } on a 340x220 SVG canvas with well-spaced, accurate shapes: {"kind":"arrow","x1":n,"y1":n,"x2":n,"y2":n,"color":hex}, {"kind":"line","x1":n,"y1":n,"x2":n,"y2":n,"color":hex,"dashed"?:bool}, {"kind":"rect","x":n,"y":n,"w":n,"h":n,"color":hex,"fill":rgba}, {"kind":"circle","cx":n,"cy":n,"r":n,"color":hex,"fill":rgba}, {"kind":"polygon","points":[{"x":n,"y":n},...],"color":hex,"fill":rgba}, {"kind":"arc","cx":n,"cy":n,"r":n,"startAngle":deg,"endAngle":deg,"label":str,"color":hex}, {"kind":"right_angle","x":n,"y":n,"size":14,"dx":1,"dy":-1,"color":hex}, {"kind":"path","d":svgPath,"color":hex,"fill":rgbaOrNone}, {"kind":"text","x":n,"y":n,"content":str,"color":hex,"fontSize":10}. (2) "molecule": { "type":"molecule", "title":string, "shells"?:[{"symbol":str,"charge"?:str,"rings":number[],"style":"dot"|"cross"}], "atoms"?:[{"id":str,"symbol":str,"x":n,"y":n,"color":hex}], "bonds"?:[{"from":str,"to":str,"order":1|2|3}], "caption":string } on 320x190 canvas — use the EXACT elements/compound the student asked about! (3) "table": { "type":"table", "title":string, "headers":string[], "rows":string[][], "caption":string }. (4) "function_plot": { "type":"function_plot", "title":string, "expression":string (ONLY single variable x, NEVER "="), "xMin":-6, "xMax":6, "caption":string }. (5) "wave": { "type":"wave", "title":string, "variant":"transverse"|"longitudinal", "frequency":2, "amplitude":34, "caption":string }. Include at least 7 clear primitives if using canvas_diagram.',
                 },
                 {
                   role: 'user',
-                  content: `Draw a clear, labeled educational diagram for this student discussion:\nTopic context: ${recentContext.slice(0, 600)}\nStudent request: ${question}`,
+                  content: `Student Level: ${educationLevel}\nConversation Context: ${recentContext.slice(0, 700)}\nExact Student Request: ${question}\nGenerate the exact custom visual widget(s) from scratch for this request.`,
                 },
               ],
-              1100,
+              1400,
               true
             );
-            const dc = drawReply.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
-            const fb = dc.indexOf('{');
-            const lb = dc.lastIndexOf('}');
-            const dObj = JSON.parse(fb >= 0 && lb > fb ? dc.slice(fb, lb + 1) : dc) as {
+            const sc = synthReply.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+            const fb = sc.indexOf('{');
+            const lb = sc.lastIndexOf('}');
+            const sObj = JSON.parse(fb >= 0 && lb > fb ? sc.slice(fb, lb + 1) : sc) as {
+              widgets?: unknown[];
               type?: string;
-              title?: string;
-              primitives?: unknown[];
-              caption?: string;
             };
-            if (Array.isArray(dObj.primitives) && dObj.primitives.length >= 2) {
-              parsed.widgets = [
-                {
-                  type: 'canvas_diagram',
-                  title: dObj.title || String(parsed.heading || 'Visual Diagram'),
-                  primitives: dObj.primitives,
-                  caption: dObj.caption || 'Generated interactive diagram.',
-                },
-              ];
+            const rawList = Array.isArray(sObj.widgets) ? sObj.widgets : sObj.type ? [sObj] : [];
+            const validList = sanitizeWidgets(rawList);
+            if (validList.length > 0) {
+              parsed.widgets = validList;
             }
           } catch {
             // non-fatal; written explanation still returned
@@ -945,11 +579,11 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             role: 'user',
             content:
               mode === 'continue'
-                ? `Write the NEXT FULL MULTI-PAGE CONTINUATION CHAPTER of the ${level} ${subject} textbook notes on "${topic}". STRICTLY DO NOT repeat any of these already-covered sections: [${previousSections.join(', ')}]. Include: a 2-paragraph bridge introduction, 4 new objectives, 5 new key terms, 5 to 6 brand-new deeply explained subtopic sections (each section MUST be 3 full detailed paragraphs with real-world examples and formulas — NO short 2-sentence paragraphs!), 2 fresh full step-by-step worked examples, examiner mistakes, 6 summary points, and 4 new exam-standard practice exercises with full solutions.`
-                : `Write COMPLETE, FULL-LENGTH, MULTI-PAGE ${level} ${subject} school textbook notes on "${topic}" aligned strictly to ${level} syllabus depth (never mix O-Level and A-Level). Requirements: (1) Rich 3-paragraph introduction explaining background, significance, and exam relevance; (2) 5-6 measurable learning objectives; (3) 6-8 thorough key terms & definitions; (4) 6 to 8 comprehensive subtopic sections where EVERY section has 3-4 well-developed paragraphs (at least 150-220 words per section!) with clear explanations, everyday real-world examples, comparisons, and formulas on separate lines; (5) 2 complete 9-step worked examples; (6) detailed common mistakes & examiner warnings; (7) high-yield exam tip; (8) 6-8 summary points; (9) 5 practice exercises (Foundation to GCE Exam level) with complete step-by-step solutions.`,
+                ? `Write the NEXT FULL CONTINUATION CHAPTER of the ${level} ${subject} textbook notes on "${topic}". STRICTLY DO NOT repeat any already-covered sections: [${previousSections.join(', ')}]. Include: a 2-paragraph bridge introduction, 4 new objectives, 4 new key terms, 4 deeply explained subtopic sections (each 2-3 detailed paragraphs with real-world examples and formulas), 1 full 9-step worked example, examiner mistakes, 5 summary points, and 3 exam-standard practice exercises with solutions.`
+                : `Write COMPLETE, THOROUGH ${level} ${subject} school textbook notes on "${topic}" aligned strictly to ${level} syllabus depth. Include: (1) rich 2-paragraph introduction; (2) 4-5 learning objectives; (3) 5-6 thorough key terms & definitions; (4) 5 comprehensive subtopic sections where EVERY section has 2-3 detailed paragraphs with real-world examples and formulas on separate lines; (5) 1 complete 9-step worked example; (6) common mistakes & examiner warnings; (7) high-yield exam tip; (8) 5-6 summary points; (9) 4 practice exercises with full step-by-step solutions.`,
           },
         ],
-        5200,
+        2600,
         true
       );
       const cleaned = reply
@@ -962,7 +596,20 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       const repaired = slice
         .replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
         .replace(/,\s*([}\]])/g, '$1');
-      res.status(200).json(JSON.parse(repaired));
+      try {
+        res.status(200).json(JSON.parse(repaired));
+      } catch {
+        res.status(200).json({
+          title: `${topic} — ${level} ${subject} Notes`,
+          introduction: cleaned.replace(/[{}"]/g, '').slice(0, 1200),
+          sections: [
+            {
+              heading: `Core Concepts of ${topic}`,
+              body: cleaned.replace(/[{}"]/g, '').slice(0, 2400),
+            },
+          ],
+        });
+      }
       return;
     }
 

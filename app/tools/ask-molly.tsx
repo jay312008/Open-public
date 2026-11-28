@@ -83,7 +83,7 @@ export default function AskMollyScreen() {
   const makeWelcomeMsg = (): ChatMsg => ({
     id: 'welcome',
     role: 'assistant',
-    heading: `Hi ${firstName}! 👋 I'm ${companion.name}.`,
+    heading: `Hi ${firstName}! I'm ${companion.name}.`,
     text: 'Ask me any question — I will explain it clearly step-by-step like a 1-on-1 teacher, remember our conversation, and draw graphs or diagrams whenever they help.',
     timestamp: nowTime(),
   });

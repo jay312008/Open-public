@@ -27,11 +27,14 @@ async function postToGatewayDetailed<T>(
   body: Record<string, unknown>
 ): Promise<{ data: T | null; error?: string }> {
   if (!isLiveAIGatewayConfigured) return { data: null };
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 25000) : null;
   try {
     const res = await fetch(`${AI_GATEWAY_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      ...(controller ? { signal: controller.signal } : {}),
     });
     const text = await res.text();
     let parsed: Record<string, unknown> | null = null;
@@ -52,6 +55,8 @@ async function postToGatewayDetailed<T>(
       data: null,
       error: err instanceof Error ? err.message : 'Network error calling AI gateway',
     };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 
