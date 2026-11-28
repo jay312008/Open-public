@@ -268,7 +268,11 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.mollyContent}>
-              <View style={styles.mollyLeft}>
+              <AnimatedPressable
+                onPress={() => router.push('/tools/ask-molly')}
+                style={styles.mollyLeft}
+                accessibilityLabel="Open Chat with Molly"
+              >
                 <View style={styles.mollyOnlinePill}>
                   <View style={[styles.onlineDot, { backgroundColor: colors.brandGreen }]} />
                   <Text
@@ -289,9 +293,9 @@ export default function HomeScreen() {
                     { color: isDark ? 'rgba(235,243,237,0.82)' : '#544B6E' },
                   ]}
                 >
-                  Step-by-step help on any topic or homework
+                  Tap to open chat — step-by-step help on any topic
                 </Text>
-              </View>
+              </AnimatedPressable>
 
               <View
                 style={[
@@ -383,6 +387,18 @@ export default function HomeScreen() {
             foregroundSource={HomeCardAssets.bookAnalyzerFg}
             foregroundWidthPercent="40%"
             onPress={() => router.push('/tools/book-analyzer')}
+          />
+
+          {/* Layered Card 7: AI Study Groups (dedicated page with its own 3D layered card) */}
+          <LayeredFeatureCard
+            title="AI Study Groups"
+            badgeText="O-Level · A-Level · Uni"
+            subtitle="Join or create private groups with up to 5 AI Teachers & daily quizzes"
+            accentColor="#16A34A"
+            backgroundSource={HomeCardAssets.studyGroupsBg}
+            foregroundSource={HomeCardAssets.studyGroupsFg}
+            foregroundWidthPercent="44%"
+            onPress={() => router.push('/groups' as never)}
           />
 
           {/* Continue Learning Module (real next recommended lesson) */}

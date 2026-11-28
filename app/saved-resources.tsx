@@ -172,7 +172,7 @@ export default function SavedResourcesScreen() {
                           ? ('/tools/live-teacher' as never)
                           : ({
                               pathname: '/tools/ask-molly',
-                              params: { initialQuestion: `Continue our discussion on: ${c.title}` },
+                              params: { conversationId: c.id },
                             } as never)
                       )
                     }

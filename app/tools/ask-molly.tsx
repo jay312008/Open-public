@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import Svg, { Circle, Line, Path, Polygon, Text as SvgText } from 'react-native-svg';
 import { AppBackground } from '@/components/AppBackground';
 import { BrandHeader } from '@/components/BrandHeader';
@@ -64,29 +64,64 @@ function buildRichMessage(
 }
 
 export default function AskMollyScreen() {
-  const { initialQuestion, prompt } = useLocalSearchParams<{
+  const { initialQuestion, prompt, conversationId } = useLocalSearchParams<{
     initialQuestion?: string;
     prompt?: string;
+    conversationId?: string;
   }>();
   const seedPrompt = initialQuestion ?? prompt;
   const { colors, isDark } = useTheme();
-  const { profile, saveConversation, learningMemory, consumeCredits, logStudyActivity } = useApp();
+  const { profile, conversations, saveConversation, learningMemory, consumeCredits, logStudyActivity } = useApp();
+  const router = useRouter();
   const companion = getCompanionById(profile.companionId);
   const firstName = profile.displayName.split(' ')[0];
 
+  const makeWelcomeMsg = (): ChatMsg => ({
+    id: 'welcome',
+    role: 'assistant',
+    heading: `Hi ${firstName}! 👋 I'm ${companion.name}.`,
+    text: 'Ask me any question — I will explain it clearly step-by-step like a 1-on-1 teacher, remember our conversation, and draw graphs or diagrams whenever they help.',
+    timestamp: nowTime(),
+  });
+
+  const [activeConvId, setActiveConvId] = useState<string>(() => conversationId ?? `chat-${Date.now()}`);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [bookmarked, setBookmarked] = useState(false);
-  const [messages, setMessages] = useState<ChatMsg[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      heading: `Hi ${firstName}! 👋 I'm ${companion.name}.`,
-      text: 'Ask me any topic — I will reply in clean steps and draw interactive graphs, wave boards with rulers, geometry diagrams, and mini calculators right inside the chat.',
-      timestamp: nowTime(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMsg[]>([makeWelcomeMsg()]);
+  const restoredRef = useRef<string | null>(null);
+
+  // Auto-resume either the selected conversationId from History OR the most recent Ask Molly chat!
+  useEffect(() => {
+    const mollyChats = conversations.filter((c) => c.tool === 'ask-molly' && c.messages.length > 0);
+    const target = conversationId
+      ? mollyChats.find((c) => c.id === conversationId)
+      : !seedPrompt
+        ? mollyChats[0]
+        : undefined;
+
+    if (target && restoredRef.current !== target.id) {
+      restoredRef.current = target.id;
+      setActiveConvId(target.id);
+      setMessages(
+        target.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          text: m.text,
+          equation: m.equation,
+          timestamp: m.createdAt,
+        }))
+      );
+    }
+  }, [conversationId, conversations, seedPrompt]);
+
+  const handleNewChat = () => {
+    const freshId = `chat-${Date.now()}`;
+    restoredRef.current = freshId;
+    setActiveConvId(freshId);
+    setMessages([makeWelcomeMsg()]);
+    setInput('');
+  };
 
   const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
@@ -135,15 +170,17 @@ export default function AskMollyScreen() {
     setMessages(finalMsgs);
     setLoading(false);
 
+    const firstUserText = finalMsgs.find((m) => m.role === 'user')?.text ?? clean;
     saveConversation({
-      id: `chat-${clean.slice(0, 12)}`,
-      title: clean.slice(0, 40),
+      id: activeConvId,
+      title: firstUserText.slice(0, 44),
       tool: 'ask-molly',
       updatedAt: new Date().toLocaleDateString(),
       messages: finalMsgs.map((m) => ({
         id: m.id,
         role: m.role,
         text: m.text,
+        equation: m.equation,
         createdAt: m.timestamp,
       })),
     });
@@ -195,14 +232,9 @@ export default function AskMollyScreen() {
     }
   };
 
-  const handleBookmark = () => {
-    setBookmarked((b) => !b);
-    Alert.alert('Saved', 'Conversation bookmarked in Saved Resources.');
-  };
-
   const followUps = [
-    { icon: 'book-outline' as const, color: '#16A34A', label: 'Give another example', prompt: 'Give me another worked example of this topic' },
-    { icon: 'stats-chart' as const, color: '#7C3AED', label: 'Show the graph', prompt: 'Show the graph for a quadratic equation y = x² - 4x + 3' },
+    { icon: 'book-outline' as const, color: '#16A34A', label: 'Give another example', prompt: 'Give me another simple worked example of what we are discussing' },
+    { icon: 'stats-chart' as const, color: '#7C3AED', label: 'Draw a visual', prompt: 'Draw a helpful diagram or graph for what we are discussing' },
     { icon: 'disc-outline' as const, color: '#FF6B4A', label: 'Practice questions', prompt: 'Give me 3 practice questions to test my understanding' },
   ];
 
@@ -211,7 +243,7 @@ export default function AskMollyScreen() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <BrandHeader showBack title={`Chat with ${companion.name}`} />
 
-        {/* Companion Online Status Card (matches 09_chat_molly_fullsize_example.png) */}
+        {/* Companion Status Card with + New Chat & History buttons */}
         <View style={styles.statusWrap}>
           <View
             style={[
@@ -228,22 +260,27 @@ export default function AskMollyScreen() {
                 <View style={styles.onlineRow}>
                   <View style={[styles.onlineDot, { backgroundColor: colors.brandGreen }]} />
                   <Text style={[styles.onlineSub, { color: colors.textSecondary }]}>
-                    Online · Your learning companion
+                    Online · 1-on-1 Tutor
                   </Text>
                 </View>
               </View>
             </View>
-            <AnimatedPressable
-              onPress={handleBookmark}
-              style={[styles.statusActionBtn, { backgroundColor: colors.surfaceMuted }]}
-              accessibilityLabel="Bookmark chat"
-            >
-              <Ionicons
-                name={bookmarked ? 'bookmark' : 'bookmark-outline'}
-                size={18}
-                color={bookmarked ? colors.brandGreen : colors.text}
-              />
-            </AnimatedPressable>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <AnimatedPressable
+                onPress={handleNewChat}
+                style={[styles.statusActionBtn, { backgroundColor: colors.surfaceMint }]}
+                accessibilityLabel="Start new chat"
+              >
+                <Ionicons name="add" size={21} color={colors.mintDark} />
+              </AnimatedPressable>
+              <AnimatedPressable
+                onPress={() => router.push('/saved-resources' as never)}
+                style={[styles.statusActionBtn, { backgroundColor: colors.surfaceMuted }]}
+                accessibilityLabel="Chat history"
+              >
+                <Ionicons name="time-outline" size={19} color={colors.text} />
+              </AnimatedPressable>
+            </View>
           </View>
         </View>
 
@@ -408,27 +445,28 @@ export default function AskMollyScreen() {
             )}
           </ScrollView>
 
-          {/* 3 Follow-Up Quick Action Pills (matches screenshot) */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.followUpRow}
-            style={{ flexGrow: 0 }}
-          >
-            {followUps.map((f) => (
-              <AnimatedPressable
-                key={f.label}
-                onPress={() => sendMessage(f.prompt)}
-                style={[
-                  styles.followUpPill,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-              >
-                <Ionicons name={f.icon} size={14} color={f.color} />
-                <Text style={[styles.followUpText, { color: colors.text }]}>{f.label}</Text>
-              </AnimatedPressable>
-            ))}
-          </ScrollView>
+          {/* 3 Follow-Up Quick Action Pills (fixed non-shrinking height so they never compress!) */}
+          <View style={{ flexShrink: 0, height: 48, justifyContent: 'center' }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.followUpRow}
+            >
+              {followUps.map((f) => (
+                <AnimatedPressable
+                  key={f.label}
+                  onPress={() => sendMessage(f.prompt)}
+                  style={[
+                    styles.followUpPill,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                >
+                  <Ionicons name={f.icon} size={14} color={f.color} />
+                  <Text style={[styles.followUpText, { color: colors.text }]}>{f.label}</Text>
+                </AnimatedPressable>
+              ))}
+            </ScrollView>
+          </View>
 
           {/* Rounded Floating Composer Bar */}
           <View style={styles.composerOuter}>

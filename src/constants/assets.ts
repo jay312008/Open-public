@@ -18,6 +18,8 @@ export const HomeCardAssets = {
   imageAnalyzerFg: require('../../assets/images/home/image_analyzer_fg.png') as ImageSourcePropType,
   bookAnalyzerBg: require('../../assets/images/home/book_analyzer_bg.jpg') as ImageSourcePropType,
   bookAnalyzerFg: require('../../assets/images/home/book_analyzer_fg.png') as ImageSourcePropType,
+  studyGroupsBg: require('../../assets/images/home/study_groups_bg.jpg') as ImageSourcePropType,
+  studyGroupsFg: require('../../assets/images/home/study_groups_fg.png') as ImageSourcePropType,
 };
 
 export const SubjectCardAssets = {

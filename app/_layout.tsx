@@ -34,6 +34,7 @@ function RootNavigator() {
         <Stack.Screen name="settings/edit-profile" />
         <Stack.Screen name="profile/[username]" />
         <Stack.Screen name="community/group/[id]" />
+        <Stack.Screen name="groups/index" />
         <Stack.Screen name="timetable" />
         <Stack.Screen name="wallet" />
       </Stack>
