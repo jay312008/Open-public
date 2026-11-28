@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -15,16 +17,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { AppBackground } from '@/components/AppBackground';
-import { BrandHeader } from '@/components/BrandHeader';
 import { AnimatedPressable } from '@/components/AnimatedPressable';
+import { StudentAvatar } from '@/components/StudentAvatar';
 import { useTheme } from '@/theme/ThemeContext';
 import { useApp } from '@/store/AppContext';
 import { CommunityPost } from '@/types/models';
 
-const FEED_TABS = ['For You', 'Groups', 'Following', 'Saved'] as const;
+const FEED_TABS = ['For You', 'Following', 'Saved', 'Groups'] as const;
+const POST_TAGS = ['Study Note', 'Question', 'Exam Tip', 'Formula', 'Past Paper'] as const;
 
 export default function CommunityScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const {
     profile,
     posts,
@@ -36,24 +39,40 @@ export default function CommunityScreen() {
     deletePost,
     toggleJoinGroup,
     createStudyGroup,
+    toggleFollowUser,
   } = useApp();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<(typeof FEED_TABS)[number]>('For You');
-  const [composerText, setComposerText] = useState('');
-  const [composerImage, setComposerImage] = useState<string | undefined>();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [repostedIds, setRepostedIds] = useState<string[]>([]);
+
+  // Twitter-style Compose Modal
   const [composerModalOpen, setComposerModalOpen] = useState(false);
-  const [activePostForComments, setActivePostForComments] = useState<CommunityPost | null>(null);
+  const [composerText, setComposerText] = useState('');
+  const [composerTag, setComposerTag] = useState<(typeof POST_TAGS)[number]>('Study Note');
+  const [composerImage, setComposerImage] = useState<string | undefined>();
+
+  // Thread / Replies Modal
+  const [activePostIdForComments, setActivePostIdForComments] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
+
+  // Create Study Group state
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [grpName, setGrpName] = useState('');
   const [grpSubject, setGrpSubject] = useState('Mathematics');
   const [grpDesc, setGrpDesc] = useState('');
   const [grpPrivate, setGrpPrivate] = useState(true);
-  const [grpBilling, setGrpBilling] = useState<'personal' | 'group_pool' | 'sponsored'>('personal');
   const [grpSearch, setGrpSearch] = useState('');
-  const [grpLevelFilter, setGrpLevelFilter] = useState<'All' | 'O-Level' | 'A-Level' | 'University'>('All');
-  const [grpVisFilter, setGrpVisFilter] = useState<'All' | 'Public' | 'Private'>('All');
+
+  const activePostForComments = useMemo(
+    () => posts.find((p) => p.id === activePostIdForComments) ?? null,
+    [posts, activePostIdForComments]
+  );
+
+  const hairline = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(15,23,42,0.09)';
+  const feedBg = isDark ? 'rgba(17,24,21,0.92)' : 'rgba(255,255,255,0.92)';
 
   const pickImage = async () => {
     try {
@@ -72,617 +91,757 @@ export default function CommunityScreen() {
   const handlePublish = () => {
     if (!composerText.trim() && !composerImage) return;
     createPost(
-      composerText.trim() || 'Shared a study image 📸',
-      'Study Note',
+      composerText.trim() || 'Shared a study note image',
+      composerTag,
       composerImage
     );
     setComposerText('');
     setComposerImage(undefined);
+    setComposerTag('Study Note');
     setComposerModalOpen(false);
   };
 
-  const filteredPosts = posts.filter((p) => {
-    if (activeTab === 'Following') {
-      return profile.following.includes(p.authorId) || p.authorId === profile.id;
-    }
-    if (activeTab === 'Saved') {
-      return p.bookmarks.includes(profile.id);
-    }
-    return true;
-  });
+  const toggleRepost = (postId: string) => {
+    setRepostedIds((prev) =>
+      prev.includes(postId) ? prev.filter((id) => id !== postId) : [...prev, postId]
+    );
+  };
+
+  const handleSendReply = () => {
+    if (!activePostForComments || !commentDraft.trim()) return;
+    addCommentToPost(activePostForComments.id, commentDraft.trim());
+    setCommentDraft('');
+  };
 
   const handleShare = (post: CommunityPost) => {
     Share.share({
-      message: `${post.authorName} on LearnyMol: "${post.content}"`,
+      message: `${post.authorName} (@${post.authorUsername}) on LearnyMol: "${post.content}"`,
     }).catch(() => {});
   };
 
-  const handleReport = () => {
-    Alert.alert('Reported', 'Thank you. This post has been flagged for moderation review.');
+  const handlePostMenu = (post: CommunityPost) => {
+    if (post.authorId === profile.id) {
+      Alert.alert('Post Options', 'Manage your post', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete Post', style: 'destructive', onPress: () => deletePost(post.id) },
+      ]);
+    } else {
+      const isFollowing = profile.following.includes(post.authorId);
+      Alert.alert(`@${post.authorUsername}`, 'Choose an action', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isFollowing ? `Unfollow @${post.authorUsername}` : `Follow @${post.authorUsername}`,
+          onPress: () => toggleFollowUser(post.authorId),
+        },
+        {
+          text: 'Report Post',
+          style: 'destructive',
+          onPress: () => Alert.alert('Reported', 'Thank you. This post has been flagged for moderation review.'),
+        },
+      ]);
+    }
   };
+
+  const filteredPosts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return posts.filter((p) => {
+      if (activeTab === 'Following') {
+        if (!profile.following.includes(p.authorId) && p.authorId !== profile.id) return false;
+      } else if (activeTab === 'Saved') {
+        if (!p.bookmarks.includes(profile.id)) return false;
+      }
+      if (q) {
+        return (
+          p.content.toLowerCase().includes(q) ||
+          p.authorName.toLowerCase().includes(q) ||
+          p.authorUsername.toLowerCase().includes(q) ||
+          (p.subjectTag ?? '').toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [posts, activeTab, searchQuery, profile.following, profile.id]);
+
+  const filteredGroups = useMemo(() => {
+    const q = grpSearch.trim().toLowerCase();
+    return groups.filter(
+      (g) =>
+        !q ||
+        g.name.toLowerCase().includes(q) ||
+        g.subject.toLowerCase().includes(q) ||
+        g.description.toLowerCase().includes(q)
+    );
+  }, [groups, grpSearch]);
+
+  const handleCreateGroup = () => {
+    if (!grpName.trim()) {
+      Alert.alert('Group Name Required', 'Please enter a name for your study group.');
+      return;
+    }
+    createStudyGroup({
+      name: grpName.trim(),
+      subject: grpSubject.trim() || 'General',
+      description: grpDesc.trim() || 'Focused exam revision and peer support.',
+      isPrivate: grpPrivate,
+      billingMode: 'personal',
+    });
+    setGrpName('');
+    setGrpDesc('');
+    setShowCreateGroup(false);
+  };
+
+  const renderHighlightedText = (text: string) => {
+    const parts = text.split(/(#[a-zA-Z0-9_]+|@[a-zA-Z0-9_]+)/g);
+    return (
+      <Text style={[styles.tweetBody, { color: colors.text }]}>
+        {parts.map((part, i) =>
+          part.startsWith('#') || part.startsWith('@') ? (
+            <Text key={i} style={{ color: '#1D9BF0', fontWeight: '700' }}>
+              {part}
+            </Text>
+          ) : (
+            <Text key={i}>{part}</Text>
+          )
+        )}
+      </Text>
+    );
+  };
+
+  const charsLeft = 280 - composerText.length;
 
   return (
     <AppBackground>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <BrandHeader />
+        {/* X / Twitter-Style Top Bar */}
+        <View style={[styles.topBar, { backgroundColor: feedBg, borderBottomColor: hairline }]}>
+          <AnimatedPressable onPress={() => router.push('/(tabs)/profile')} style={styles.topAvatarBtn}>
+            <StudentAvatar avatarId={profile.avatarEmoji} bgColor={profile.avatarBg} size={34} />
+          </AnimatedPressable>
 
-        {/* Rounded Feed Tabs */}
-        <View style={styles.tabsRow}>
+          <View style={styles.topTitleWrap}>
+            <Text style={[styles.topTitle, { color: colors.text }]}>Community</Text>
+          </View>
+
+          <View style={styles.topActions}>
+            <AnimatedPressable
+              onPress={() => setSearchOpen((v) => !v)}
+              style={[styles.topIconBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.05)' }]}
+              accessibilityLabel="Search posts"
+            >
+              <Ionicons name={searchOpen ? 'close' : 'search'} size={18} color={colors.text} />
+            </AnimatedPressable>
+            <AnimatedPressable
+              onPress={() => router.push('/groups' as never)}
+              style={[styles.topIconBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.05)' }]}
+              accessibilityLabel="Open AI Study Groups"
+            >
+              <Ionicons name="people-outline" size={19} color={colors.text} />
+            </AnimatedPressable>
+          </View>
+        </View>
+
+        {/* Expandable Search Bar */}
+        {searchOpen && (
+          <View style={[styles.searchStrip, { backgroundColor: feedBg, borderBottomColor: hairline }]}>
+            <View style={[styles.searchPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}>
+              <Ionicons name="search" size={16} color={colors.textMuted} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search study notes, #tags, or @students..."
+                placeholderTextColor={colors.textMuted}
+                style={[styles.searchInput, { color: colors.text }]}
+                autoFocus
+              />
+              {searchQuery.length > 0 && (
+                <AnimatedPressable onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                </AnimatedPressable>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Authentic X / Twitter Underline Tab Bar */}
+        <View style={[styles.tabBar, { backgroundColor: feedBg, borderBottomColor: hairline }]}>
           {FEED_TABS.map((tab) => {
             const active = activeTab === tab;
             return (
               <AnimatedPressable
                 key={tab}
                 onPress={() => setActiveTab(tab)}
-                style={[
-                  styles.tabPill,
-                  {
-                    backgroundColor: active ? colors.coral : colors.surface,
-                    borderColor: active ? colors.coral : colors.border,
-                  },
-                ]}
+                style={styles.tabItem}
               >
                 <Text
-                  style={[styles.tabText, { color: active ? '#FFFFFF' : colors.text }]}
-                  numberOfLines={1}
+                  style={[
+                    styles.tabLabel,
+                    {
+                      color: active ? colors.text : colors.textMuted,
+                      fontWeight: active ? '800' : '600',
+                    },
+                  ]}
                 >
                   {tab}
                 </Text>
+                {active && <View style={[styles.tabUnderline, { backgroundColor: '#1D9BF0' }]} />}
               </AnimatedPressable>
             );
           })}
         </View>
 
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {/* Compact Inline Post Composer */}
-          {activeTab !== 'Groups' && (
-            <View
-              style={[
-                styles.composerCard,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
-              <View style={[styles.avatarSm, { backgroundColor: profile.avatarBg }]}>
-                <Text style={{ fontSize: 18 }}>{profile.avatarEmoji}</Text>
-              </View>
-              <TextInput
-                value={composerText}
-                onChangeText={setComposerText}
-                placeholder="Share a study note, tip, or question..."
-                placeholderTextColor={colors.textMuted}
-                style={[styles.composerInput, { color: colors.text }]}
-              />
-              <AnimatedPressable onPress={pickImage} style={styles.composerIconBtn}>
-                <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
-              </AnimatedPressable>
+        <ScrollView
+          style={{ flex: 1, backgroundColor: feedBg }}
+          contentContainerStyle={styles.feedContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {activeTab !== 'Groups' ? (
+            <>
+              {/* Quick Inline Tweet Prompt Row (taps to open full Twitter composer) */}
               <AnimatedPressable
-                onPress={handlePublish}
-                style={[styles.postMiniBtn, { backgroundColor: colors.coral }]}
+                onPress={() => setComposerModalOpen(true)}
+                style={[styles.inlinePromptRow, { borderBottomColor: hairline }]}
               >
-                <Text style={styles.postMiniText}>Post</Text>
-              </AnimatedPressable>
-            </View>
-          )}
-
-          {composerImage && (
-            <View style={styles.previewWrap}>
-              <Image source={{ uri: composerImage }} style={styles.previewImg} />
-              <AnimatedPressable
-                onPress={() => setComposerImage(undefined)}
-                style={styles.removeImgBtn}
-              >
-                <Ionicons name="close" size={16} color="#FFFFFF" />
-              </AnimatedPressable>
-            </View>
-          )}
-
-          {/* GROUPS TAB */}
-          {activeTab === 'Groups' ? (
-            <View style={{ gap: 12 }}>
-              <AnimatedPressable
-                onPress={() => setShowCreateGroup((v) => !v)}
-                style={[
-                  styles.postCard,
-                  {
-                    backgroundColor: colors.mintDark,
-                    borderColor: colors.mintDark,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    paddingVertical: 13,
-                  },
-                ]}
-              >
-                <Ionicons name={showCreateGroup ? 'close' : 'add-circle-outline'} size={19} color="#FFFFFF" />
-                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14.5 }}>
-                  {showCreateGroup ? 'Cancel' : 'Create Study Group'}
+                <StudentAvatar avatarId={profile.avatarEmoji} bgColor={profile.avatarBg} size={40} />
+                <Text style={[styles.inlinePromptPlaceholder, { color: colors.textMuted }]}>
+                  What are you studying today?
                 </Text>
+                <View style={styles.inlinePromptBtn}>
+                  <Text style={styles.inlinePromptBtnText}>Post</Text>
+                </View>
               </AnimatedPressable>
+
+              {/* Hairline-Separated Twitter Timeline */}
+              {filteredPosts.length === 0 ? (
+                <View style={styles.emptyWrap}>
+                  <Ionicons name="chatbubbles-outline" size={40} color={colors.textMuted} />
+                  <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                    {activeTab === 'Saved'
+                      ? 'No Bookmarked Posts Yet'
+                      : activeTab === 'Following'
+                        ? 'Your Following Feed Is Quiet'
+                        : 'No Matching Study Posts'}
+                  </Text>
+                  <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                    {activeTab === 'Saved'
+                      ? 'Tap the bookmark icon on any helpful study note to save it here.'
+                      : 'Follow fellow students or share a study tip to start the conversation.'}
+                  </Text>
+                </View>
+              ) : (
+                filteredPosts.map((post) => {
+                  const isLiked = post.likes.includes(profile.id);
+                  const isBookmarked = post.bookmarks.includes(profile.id);
+                  const isReposted = repostedIds.includes(post.id);
+                  const repostCount = (post.likes.length > 0 ? Math.floor(post.likes.length / 2) : 0) + (isReposted ? 1 : 0);
+
+                  return (
+                    <View
+                      key={post.id}
+                      style={[styles.tweetRow, { borderBottomColor: hairline }]}
+                    >
+                      {/* Left Avatar Column */}
+                      <AnimatedPressable
+                        onPress={() => router.push(`/profile/${post.authorUsername}` as never)}
+                        style={styles.tweetLeft}
+                      >
+                        <StudentAvatar
+                          avatarId={post.authorAvatar}
+                          size={44}
+                        />
+                      </AnimatedPressable>
+
+                      {/* Right Content Column */}
+                      <View style={styles.tweetRight}>
+                        {/* Header: Name + Verified + @handle · time + Menu */}
+                        <View style={styles.tweetHeader}>
+                          <AnimatedPressable
+                            onPress={() => router.push(`/profile/${post.authorUsername}` as never)}
+                            style={styles.tweetAuthorLine}
+                          >
+                            <Text style={[styles.authorName, { color: colors.text }]} numberOfLines={1}>
+                              {post.authorName}
+                            </Text>
+                            <Ionicons name="checkmark-circle" size={14} color="#1D9BF0" />
+                            <Text style={[styles.authorMeta, { color: colors.textMuted }]} numberOfLines={1}>
+                              @{post.authorUsername} · {post.createdAt}
+                            </Text>
+                          </AnimatedPressable>
+                          <AnimatedPressable
+                            onPress={() => handlePostMenu(post)}
+                            style={styles.moreBtn}
+                            accessibilityLabel="Post options"
+                          >
+                            <Ionicons name="ellipsis-horizontal" size={17} color={colors.textMuted} />
+                          </AnimatedPressable>
+                        </View>
+
+                        {/* Subtle Academic Topic Pill */}
+                        {post.subjectTag ? (
+                          <View style={styles.tagLine}>
+                            <View
+                              style={[
+                                styles.topicChip,
+                                { backgroundColor: isDark ? 'rgba(29,155,240,0.16)' : '#EFF6FF' },
+                              ]}
+                            >
+                              <Text style={{ color: '#1D9BF0', fontSize: 11, fontWeight: '700' }}>
+                                {post.subjectTag}
+                              </Text>
+                            </View>
+                          </View>
+                        ) : null}
+
+                        {/* Post Body */}
+                        {renderHighlightedText(post.content)}
+
+                        {/* Optional Media Image */}
+                        {post.imageUri && (
+                          <Image
+                            source={{ uri: post.imageUri }}
+                            style={[styles.tweetMedia, { borderColor: hairline }]}
+                            resizeMode="cover"
+                          />
+                        )}
+
+                        {/* Authentic 5-Icon X / Twitter Action Bar */}
+                        <View style={styles.actionBar}>
+                          {/* 1. Reply */}
+                          <AnimatedPressable
+                            onPress={() => setActivePostIdForComments(post.id)}
+                            style={styles.actionBtn}
+                          >
+                            <Ionicons name="chatbubble-outline" size={17} color={colors.textMuted} />
+                            <Text style={[styles.actionCount, { color: colors.textMuted }]}>
+                              {post.comments.length > 0 ? post.comments.length : ''}
+                            </Text>
+                          </AnimatedPressable>
+
+                          {/* 2. Repost */}
+                          <AnimatedPressable
+                            onPress={() => toggleRepost(post.id)}
+                            style={styles.actionBtn}
+                          >
+                            <Ionicons
+                              name="repeat"
+                              size={19}
+                              color={isReposted ? '#00BA7C' : colors.textMuted}
+                            />
+                            <Text
+                              style={[
+                                styles.actionCount,
+                                { color: isReposted ? '#00BA7C' : colors.textMuted },
+                              ]}
+                            >
+                              {repostCount > 0 ? repostCount : ''}
+                            </Text>
+                          </AnimatedPressable>
+
+                          {/* 3. Like */}
+                          <AnimatedPressable
+                            onPress={() => toggleLikePost(post.id)}
+                            style={styles.actionBtn}
+                          >
+                            <Ionicons
+                              name={isLiked ? 'heart' : 'heart-outline'}
+                              size={18}
+                              color={isLiked ? '#F91880' : colors.textMuted}
+                            />
+                            <Text
+                              style={[
+                                styles.actionCount,
+                                { color: isLiked ? '#F91880' : colors.textMuted },
+                              ]}
+                            >
+                              {post.likes.length > 0 ? post.likes.length : ''}
+                            </Text>
+                          </AnimatedPressable>
+
+                          {/* 4. Bookmark */}
+                          <AnimatedPressable
+                            onPress={() => toggleBookmarkPost(post.id)}
+                            style={styles.actionBtn}
+                          >
+                            <Ionicons
+                              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+                              size={17}
+                              color={isBookmarked ? '#1D9BF0' : colors.textMuted}
+                            />
+                          </AnimatedPressable>
+
+                          {/* 5. Share */}
+                          <AnimatedPressable
+                            onPress={() => handleShare(post)}
+                            style={styles.actionBtn}
+                          >
+                            <Ionicons name="share-outline" size={18} color={colors.textMuted} />
+                          </AnimatedPressable>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </>
+          ) : (
+            /* GROUPS (Twitter Communities Style) */
+            <View style={{ padding: 14, gap: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <AnimatedPressable
+                  onPress={() => setShowCreateGroup((v) => !v)}
+                  style={[styles.groupPrimaryBtn, { backgroundColor: '#1D9BF0', flex: 1 }]}
+                >
+                  <Ionicons name={showCreateGroup ? 'close' : 'add'} size={18} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 }}>
+                    {showCreateGroup ? 'Cancel' : 'New Study Group'}
+                  </Text>
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={() => router.push('/groups' as never)}
+                  style={[styles.groupPrimaryBtn, { backgroundColor: colors.surfaceMuted, flex: 1 }]}
+                >
+                  <Ionicons name="people" size={16} color={colors.text} />
+                  <Text style={{ color: colors.text, fontWeight: '800', fontSize: 13.5 }}>
+                    Full Groups Hub
+                  </Text>
+                </AnimatedPressable>
+              </View>
 
               {showCreateGroup && (
-                <View style={[styles.postCard, { backgroundColor: colors.surface, borderColor: colors.border, gap: 10 }]}>
-                  <Text style={[styles.groupTitle, { color: colors.text }]}>New AI Study Group</Text>
+                <View style={[styles.groupForm, { borderColor: hairline, backgroundColor: colors.surface }]}>
+                  <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Create Study Group</Text>
                   <TextInput
                     value={grpName}
                     onChangeText={setGrpName}
-                    placeholder="Group name (e.g. GCE Physics A-Level Squad)"
+                    placeholder="Group name (e.g. GCE Physics Squad)"
                     placeholderTextColor={colors.textMuted}
-                    style={[
-                      styles.composerInput,
-                      {
-                        color: colors.text,
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        paddingVertical: 9,
-                      },
-                    ]}
+                    style={[styles.formInput, { color: colors.text, borderColor: hairline }]}
                   />
                   <TextInput
                     value={grpSubject}
                     onChangeText={setGrpSubject}
-                    placeholder="Subject (e.g. Physics, Biology, Economics)"
+                    placeholder="Subject (e.g. Physics, Biology)"
                     placeholderTextColor={colors.textMuted}
-                    style={[
-                      styles.composerInput,
-                      {
-                        color: colors.text,
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        paddingVertical: 9,
-                      },
-                    ]}
+                    style={[styles.formInput, { color: colors.text, borderColor: hairline }]}
                   />
                   <TextInput
                     value={grpDesc}
                     onChangeText={setGrpDesc}
                     placeholder="Short study goal..."
                     placeholderTextColor={colors.textMuted}
-                    style={[
-                      styles.composerInput,
-                      {
-                        color: colors.text,
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        paddingVertical: 9,
-                      },
-                    ]}
+                    style={[styles.formInput, { color: colors.text, borderColor: hairline }]}
                   />
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {[
-                      { label: '🔒 Private (AI Enabled)', value: true },
-                      { label: '🌍 Public (Peer-Only)', value: false },
-                    ].map((opt) => (
-                      <AnimatedPressable
-                        key={opt.label}
-                        onPress={() => setGrpPrivate(opt.value)}
-                        style={{
-                          flex: 1,
-                          paddingVertical: 9,
-                          borderRadius: 999,
-                          alignItems: 'center',
-                          backgroundColor: grpPrivate === opt.value ? colors.coral : colors.surfaceMuted,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: grpPrivate === opt.value ? '#FFFFFF' : colors.text,
-                            fontSize: 12,
-                            fontWeight: '800',
-                          }}
-                        >
-                          {opt.label}
-                        </Text>
-                      </AnimatedPressable>
-                    ))}
-                  </View>
-                  {grpPrivate && (
-                    <View style={{ gap: 6 }}>
-                      <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: '700' }}>
-                        AI Credit Billing Mode (up to 5 AI Teachers):
-                      </Text>
-                      <View style={{ flexDirection: 'row', gap: 6 }}>
-                        {(
-                          [
-                            { id: 'personal', label: 'Personal' },
-                            { id: 'group_pool', label: 'Group Pool' },
-                            { id: 'sponsored', label: 'Sponsored' },
-                          ] as const
-                        ).map((b) => (
-                          <AnimatedPressable
-                            key={b.id}
-                            onPress={() => setGrpBilling(b.id)}
-                            style={{
-                              flex: 1,
-                              paddingVertical: 7,
-                              borderRadius: 999,
-                              alignItems: 'center',
-                              backgroundColor: grpBilling === b.id ? colors.purple : colors.surfaceMuted,
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: grpBilling === b.id ? '#FFFFFF' : colors.text,
-                                fontSize: 11.5,
-                                fontWeight: '800',
-                              }}
-                            >
-                              {b.label}
-                            </Text>
-                          </AnimatedPressable>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                  <AnimatedPressable
-                    onPress={() => {
-                      if (!grpName.trim()) return;
-                      const created = createStudyGroup({
-                        name: grpName,
-                        subject: grpSubject,
-                        description: grpDesc,
-                        isPrivate: grpPrivate,
-                        aiTeacherIds: grpPrivate ? ['t-gce-math'] : [],
-                        billingMode: grpBilling,
-                      });
-                      setGrpName('');
-                      setGrpDesc('');
-                      setShowCreateGroup(false);
-                      router.push(`/community/group/${created.id}`);
-                    }}
-                    style={{
-                      backgroundColor: grpName.trim() ? colors.mintDark : colors.surfaceMuted,
-                      paddingVertical: 12,
-                      borderRadius: 999,
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: grpName.trim() ? '#FFFFFF' : colors.textMuted,
-                        fontWeight: '800',
-                        fontSize: 14,
-                      }}
+                    <AnimatedPressable
+                      onPress={() => setGrpPrivate(true)}
+                      style={[
+                        styles.visBtn,
+                        { backgroundColor: grpPrivate ? '#1D9BF0' : colors.surfaceMuted },
+                      ]}
                     >
-                      Create & Open Group
-                    </Text>
+                      <Ionicons name="lock-closed" size={14} color={grpPrivate ? '#FFFFFF' : colors.text} />
+                      <Text style={{ color: grpPrivate ? '#FFFFFF' : colors.text, fontWeight: '800', fontSize: 12 }}>
+                        Private (AI)
+                      </Text>
+                    </AnimatedPressable>
+                    <AnimatedPressable
+                      onPress={() => setGrpPrivate(false)}
+                      style={[
+                        styles.visBtn,
+                        { backgroundColor: !grpPrivate ? '#1D9BF0' : colors.surfaceMuted },
+                      ]}
+                    >
+                      <Ionicons name="globe-outline" size={14} color={!grpPrivate ? '#FFFFFF' : colors.text} />
+                      <Text style={{ color: !grpPrivate ? '#FFFFFF' : colors.text, fontWeight: '800', fontSize: 12 }}>
+                        Public
+                      </Text>
+                    </AnimatedPressable>
+                  </View>
+                  <AnimatedPressable
+                    onPress={handleCreateGroup}
+                    style={[styles.groupPrimaryBtn, { backgroundColor: colors.mintDark }]}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Create Group</Text>
                   </AnimatedPressable>
                 </View>
               )}
 
-              {/* Search & Separate Academic Level / Visibility Filters (Part 12.2 & 12.3) */}
-              <View style={[styles.postCard, { backgroundColor: colors.surface, borderColor: colors.border, gap: 8, paddingVertical: 12 }]}>
+              <View style={[styles.searchPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}>
+                <Ionicons name="search" size={16} color={colors.textMuted} />
                 <TextInput
                   value={grpSearch}
                   onChangeText={setGrpSearch}
-                  placeholder="Search study groups by name or subject..."
+                  placeholder="Search study groups..."
                   placeholderTextColor={colors.textMuted}
-                  style={{
-                    color: colors.text,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    borderRadius: 12,
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                    fontSize: 13.5,
-                  }}
+                  style={[styles.searchInput, { color: colors.text }]}
                 />
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {(['All', 'O-Level', 'A-Level', 'University'] as const).map((lvl) => (
-                    <AnimatedPressable
-                      key={lvl}
-                      onPress={() => setGrpLevelFilter(lvl)}
-                      style={{
-                        flex: 1,
-                        paddingVertical: 6,
-                        borderRadius: 999,
-                        alignItems: 'center',
-                        backgroundColor: grpLevelFilter === lvl ? colors.coral : colors.surfaceMuted,
-                      }}
-                    >
-                      <Text style={{ color: grpLevelFilter === lvl ? '#FFFFFF' : colors.text, fontSize: 11, fontWeight: '800' }}>
-                        {lvl}
-                      </Text>
-                    </AnimatedPressable>
-                  ))}
-                </View>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {(['All', 'Public', 'Private'] as const).map((vis) => (
-                    <AnimatedPressable
-                      key={vis}
-                      onPress={() => setGrpVisFilter(vis)}
-                      style={{
-                        flex: 1,
-                        paddingVertical: 6,
-                        borderRadius: 999,
-                        alignItems: 'center',
-                        backgroundColor: grpVisFilter === vis ? colors.purple : colors.surfaceMuted,
-                      }}
-                    >
-                      <Text style={{ color: grpVisFilter === vis ? '#FFFFFF' : colors.text, fontSize: 11, fontWeight: '800' }}>
-                        {vis}
-                      </Text>
-                    </AnimatedPressable>
-                  ))}
-                </View>
               </View>
 
-              {groups
-                .filter((g) => {
-                  const q = grpSearch.trim().toLowerCase();
-                  const matchText =
-                    !q ||
-                    g.name.toLowerCase().includes(q) ||
-                    g.subject.toLowerCase().includes(q) ||
-                    g.description.toLowerCase().includes(q);
-                  const matchVis =
-                    grpVisFilter === 'All' ||
-                    (grpVisFilter === 'Private' ? g.isPrivate : !g.isPrivate);
-                  const matchLvl =
-                    grpLevelFilter === 'All' ||
-                    `${g.name} ${g.description}`.toLowerCase().includes(grpLevelFilter.toLowerCase());
-                  return matchText && matchVis && matchLvl;
-                })
-                .map((grp) => (
+              {filteredGroups.map((g) => (
                 <AnimatedPressable
-                  key={grp.id}
-                  onPress={() => router.push(`/community/group/${grp.id}`)}
-                  style={[
-                    styles.postCard,
-                    { backgroundColor: colors.surface, borderColor: colors.border },
-                  ]}
+                  key={g.id}
+                  onPress={() => router.push(`/community/group/${g.id}` as never)}
+                  style={[styles.groupRow, { borderColor: hairline, backgroundColor: colors.surface }]}
                 >
-                  <View style={styles.rowBetween}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.groupTitle, { color: colors.text }]}>{grp.name}</Text>
-                      <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                        {grp.subject} · {grp.memberCount} members · {grp.isPrivate ? '🔒 Private' : '🌍 Public'}
-                        {grp.isPrivate && grp.aiEnabled ? ' · 🤖 AI' : ''}
-                      </Text>
-                    </View>
-                    <AnimatedPressable
-                      onPress={() => toggleJoinGroup(grp.id)}
-                      style={[
-                        styles.joinBtn,
-                        {
-                          backgroundColor: grp.joined ? colors.surfaceMint : colors.coral,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={{
-                          color: grp.joined ? colors.mintDark : '#FFFFFF',
-                          fontSize: 12,
-                          fontWeight: '800',
-                        }}
-                      >
-                        {grp.joined ? 'Joined' : 'Join'}
-                      </Text>
-                    </AnimatedPressable>
+                  <View style={[styles.groupIcon, { backgroundColor: isDark ? 'rgba(29,155,240,0.18)' : '#EFF6FF' }]}>
+                    <Ionicons name={g.isPrivate ? 'lock-closed' : 'people'} size={20} color="#1D9BF0" />
                   </View>
-                  <Text style={[styles.postBody, { color: colors.textSecondary }]}>
-                    {grp.description}
-                  </Text>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>{g.name}</Text>
+                    <Text style={{ color: colors.textMuted, fontSize: 12, fontWeight: '600' }}>
+                      {g.subject} · {g.memberCount} members · {g.isPrivate ? 'Private' : 'Public'}
+                    </Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 13 }} numberOfLines={2}>
+                      {g.description}
+                    </Text>
+                  </View>
+                  <AnimatedPressable
+                    onPress={() => toggleJoinGroup(g.id)}
+                    style={[
+                      styles.followPill,
+                      {
+                        backgroundColor: g.joined ? 'transparent' : colors.text,
+                        borderColor: hairline,
+                        borderWidth: g.joined ? 1.5 : 0,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: g.joined ? colors.text : colors.surface,
+                        fontSize: 12.5,
+                        fontWeight: '800',
+                      }}
+                    >
+                      {g.joined ? 'Joined' : 'Join'}
+                    </Text>
+                  </AnimatedPressable>
                 </AnimatedPressable>
               ))}
             </View>
-          ) : filteredPosts.length === 0 ? (
-            <View
-              style={[
-                styles.postCard,
-                { backgroundColor: colors.surface, borderColor: colors.border, alignItems: 'center', paddingVertical: 28 },
-              ]}
-            >
-              <Ionicons name="chatbubbles-outline" size={32} color={colors.textMuted} />
-              <Text style={[styles.groupTitle, { color: colors.text, marginTop: 8 }]}>
-                Nothing here yet
-              </Text>
-              <Text style={[styles.metaText, { color: colors.textSecondary, textAlign: 'center' }]}>
-                {activeTab === 'Saved'
-                  ? 'Bookmark helpful study notes to find them quickly here.'
-                  : 'Follow classmates or share your first study note above!'}
-              </Text>
-            </View>
-          ) : (
-            filteredPosts.map((post) => {
-              const liked = post.likes.includes(profile.id);
-              const saved = post.bookmarks.includes(profile.id);
-              const isOwn = post.authorId === profile.id;
-
-              return (
-                <View
-                  key={post.id}
-                  style={[
-                    styles.postCard,
-                    { backgroundColor: colors.surface, borderColor: colors.border },
-                  ]}
-                >
-                  <View style={styles.postHeader}>
-                    <AnimatedPressable
-                      onPress={() => router.push(`/profile/${post.authorUsername}`)}
-                      style={styles.authorRow}
-                    >
-                      <View style={[styles.avatarSm, { backgroundColor: post.authorBg }]}>
-                        <Text style={{ fontSize: 18 }}>{post.authorAvatar}</Text>
-                      </View>
-                      <View>
-                        <Text style={[styles.authorName, { color: colors.text }]}>
-                          {post.authorName}
-                        </Text>
-                        <Text style={[styles.metaText, { color: colors.textMuted }]}>
-                          @{post.authorUsername} · {post.createdAt}
-                        </Text>
-                      </View>
-                    </AnimatedPressable>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      {post.subjectTag && (
-                        <View style={[styles.tagPill, { backgroundColor: colors.surfaceMint }]}>
-                          <Text style={[styles.tagText, { color: colors.mintDark }]}>
-                            {post.subjectTag}
-                          </Text>
-                        </View>
-                      )}
-                      <AnimatedPressable
-                        onPress={() => (isOwn ? deletePost(post.id) : handleReport())}
-                      >
-                        <Ionicons
-                          name={isOwn ? 'trash-outline' : 'flag-outline'}
-                          size={16}
-                          color={colors.textMuted}
-                        />
-                      </AnimatedPressable>
-                    </View>
-                  </View>
-
-                  <Text style={[styles.postBody, { color: colors.text }]}>{post.content}</Text>
-
-                  {post.imageUri && (
-                    <Image source={{ uri: post.imageUri }} style={styles.postImg} />
-                  )}
-
-                  <View style={[styles.actionsRow, { borderTopColor: colors.borderSubtle }]}>
-                    <AnimatedPressable
-                      onPress={() => toggleLikePost(post.id)}
-                      style={styles.actionBtn}
-                    >
-                      <Ionicons
-                        name={liked ? 'heart' : 'heart-outline'}
-                        size={19}
-                        color={liked ? colors.coral : colors.textSecondary}
-                      />
-                      <Text style={[styles.actionCount, { color: colors.textSecondary }]}>
-                        {post.likes.length}
-                      </Text>
-                    </AnimatedPressable>
-
-                    <AnimatedPressable
-                      onPress={() => setActivePostForComments(post)}
-                      style={styles.actionBtn}
-                    >
-                      <Ionicons name="chatbubble-outline" size={18} color={colors.textSecondary} />
-                      <Text style={[styles.actionCount, { color: colors.textSecondary }]}>
-                        {post.comments.length}
-                      </Text>
-                    </AnimatedPressable>
-
-                    <AnimatedPressable onPress={() => handleShare(post)} style={styles.actionBtn}>
-                      <Ionicons name="share-social-outline" size={18} color={colors.textSecondary} />
-                    </AnimatedPressable>
-
-                    <AnimatedPressable
-                      onPress={() => toggleBookmarkPost(post.id)}
-                      style={styles.actionBtn}
-                    >
-                      <Ionicons
-                        name={saved ? 'bookmark' : 'bookmark-outline'}
-                        size={18}
-                        color={saved ? colors.coral : colors.textSecondary}
-                      />
-                    </AnimatedPressable>
-                  </View>
-                </View>
-              );
-            })
           )}
         </ScrollView>
 
-        {/* Coral Floating Create-Post Button */}
-        <AnimatedPressable
-          onPress={() => setComposerModalOpen(true)}
-          style={[styles.fab, { backgroundColor: colors.coral }]}
-          accessibilityLabel="Create post"
-        >
-          <Ionicons name="add" size={28} color="#FFFFFF" />
-        </AnimatedPressable>
+        {/* Floating Twitter / X Compose Button */}
+        {activeTab !== 'Groups' && (
+          <AnimatedPressable
+            onPress={() => setComposerModalOpen(true)}
+            style={styles.fab}
+            accessibilityLabel="Create new post"
+          >
+            <Ionicons name="add" size={28} color="#FFFFFF" />
+          </AnimatedPressable>
+        )}
 
-        {/* Full Create Post Modal */}
-        <Modal visible={composerModalOpen} transparent animationType="slide">
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalSheet, { backgroundColor: colors.surface }]}>
-              <View style={styles.rowBetween}>
-                <Text style={[styles.groupTitle, { color: colors.text }]}>Create Study Post</Text>
+        {/* Full Twitter-Style Compose Modal */}
+        <Modal
+          visible={composerModalOpen}
+          animationType="slide"
+          transparent={false}
+          onRequestClose={() => setComposerModalOpen(false)}
+        >
+          <SafeAreaView style={[styles.modalSafe, { backgroundColor: isDark ? '#111815' : '#FFFFFF' }]}>
+            <KeyboardAvoidingView
+              style={{ flex: 1 }}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+              <View style={[styles.modalHeader, { borderBottomColor: hairline }]}>
                 <AnimatedPressable onPress={() => setComposerModalOpen(false)}>
-                  <Ionicons name="close" size={24} color={colors.text} />
-                </AnimatedPressable>
-              </View>
-              <TextInput
-                value={composerText}
-                onChangeText={setComposerText}
-                placeholder="Write notes, ask a question, or share a formula..."
-                placeholderTextColor={colors.textMuted}
-                multiline
-                style={[styles.modalTextarea, { color: colors.text, borderColor: colors.border }]}
-              />
-              <View style={styles.rowBetween}>
-                <AnimatedPressable onPress={pickImage} style={styles.actionBtn}>
-                  <Ionicons name="image-outline" size={20} color={colors.coral} />
-                  <Text style={{ color: colors.coral, fontWeight: '700' }}>Add Photo</Text>
+                  <Text style={{ color: colors.text, fontSize: 15.5, fontWeight: '600' }}>Cancel</Text>
                 </AnimatedPressable>
                 <AnimatedPressable
                   onPress={handlePublish}
-                  style={[styles.joinBtn, { backgroundColor: colors.coral, paddingHorizontal: 22 }]}
+                  style={[
+                    styles.publishBtn,
+                    {
+                      backgroundColor:
+                        composerText.trim() || composerImage ? '#1D9BF0' : 'rgba(29,155,240,0.45)',
+                    },
+                  ]}
                 >
-                  <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>Publish</Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14.5 }}>Post</Text>
                 </AnimatedPressable>
               </View>
-            </View>
-          </View>
+
+              <ScrollView style={{ flex: 1, padding: 16 }}>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <StudentAvatar avatarId={profile.avatarEmoji} bgColor={profile.avatarBg} size={42} />
+                  <View style={{ flex: 1, gap: 10 }}>
+                    <View style={styles.tagSelectorRow}>
+                      {POST_TAGS.map((tag) => {
+                        const sel = composerTag === tag;
+                        return (
+                          <AnimatedPressable
+                            key={tag}
+                            onPress={() => setComposerTag(tag)}
+                            style={[
+                              styles.tagOption,
+                              {
+                                backgroundColor: sel
+                                  ? '#1D9BF0'
+                                  : isDark
+                                    ? 'rgba(255,255,255,0.08)'
+                                    : '#F1F5F9',
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={{
+                                color: sel ? '#FFFFFF' : colors.textSecondary,
+                                fontSize: 11.5,
+                                fontWeight: '700',
+                              }}
+                            >
+                              {tag}
+                            </Text>
+                          </AnimatedPressable>
+                        );
+                      })}
+                    </View>
+
+                    <TextInput
+                      value={composerText}
+                      onChangeText={(t) => setComposerText(t.slice(0, 280))}
+                      placeholder="Share a study tip, question, or #GCE revision note..."
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      autoFocus
+                      style={[styles.modalTextInput, { color: colors.text }]}
+                    />
+
+                    {composerImage && (
+                      <View style={styles.previewWrap}>
+                        <Image source={{ uri: composerImage }} style={styles.previewImg} />
+                        <AnimatedPressable
+                          onPress={() => setComposerImage(undefined)}
+                          style={styles.removeImgBtn}
+                        >
+                          <Ionicons name="close" size={16} color="#FFFFFF" />
+                        </AnimatedPressable>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </ScrollView>
+
+              <View style={[styles.composerFooter, { borderTopColor: hairline }]}>
+                <AnimatedPressable onPress={pickImage} style={styles.footerIconBtn}>
+                  <Ionicons name="image-outline" size={22} color="#1D9BF0" />
+                  <Text style={{ color: '#1D9BF0', fontWeight: '700', fontSize: 13 }}>Add Photo</Text>
+                </AnimatedPressable>
+                <Text
+                  style={{
+                    color: charsLeft < 30 ? colors.coral : colors.textMuted,
+                    fontSize: 13,
+                    fontWeight: '700',
+                  }}
+                >
+                  {charsLeft}
+                </Text>
+              </View>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
         </Modal>
 
-        {/* Comments Modal */}
-        <Modal visible={Boolean(activePostForComments)} transparent animationType="slide">
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalSheet, { backgroundColor: colors.surface }]}>
-              <View style={styles.rowBetween}>
-                <Text style={[styles.groupTitle, { color: colors.text }]}>Comments</Text>
-                <AnimatedPressable onPress={() => setActivePostForComments(null)}>
-                  <Ionicons name="close" size={24} color={colors.text} />
+        {/* Twitter-Style Thread & Replies Modal */}
+        <Modal
+          visible={Boolean(activePostForComments)}
+          animationType="slide"
+          transparent={false}
+          onRequestClose={() => setActivePostIdForComments(null)}
+        >
+          <SafeAreaView style={[styles.modalSafe, { backgroundColor: isDark ? '#111815' : '#FFFFFF' }]}>
+            <KeyboardAvoidingView
+              style={{ flex: 1 }}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+              <View style={[styles.modalHeader, { borderBottomColor: hairline }]}>
+                <AnimatedPressable
+                  onPress={() => setActivePostIdForComments(null)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                >
+                  <Ionicons name="arrow-back" size={21} color={colors.text} />
+                  <Text style={{ color: colors.text, fontSize: 17, fontWeight: '800' }}>Post</Text>
                 </AnimatedPressable>
               </View>
-              <ScrollView style={{ maxHeight: 260 }}>
-                {(
-                  posts.find((p) => p.id === activePostForComments?.id)?.comments ?? []
-                ).map((c) => (
-                  <View key={c.id} style={styles.commentRow}>
-                    <Text style={{ fontSize: 18 }}>{c.authorAvatar}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.authorName, { color: colors.text }]}>
-                        {c.authorName} · <Text style={{ color: colors.textMuted, fontWeight: '400' }}>{c.createdAt}</Text>
-                      </Text>
-                      <Text style={{ color: colors.textSecondary, fontSize: 13 }}>{c.content}</Text>
+
+              {activePostForComments && (
+                <ScrollView style={{ flex: 1 }}>
+                  {/* Parent Post */}
+                  <View style={[styles.threadParent, { borderBottomColor: hairline }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <StudentAvatar avatarId={activePostForComments.authorAvatar} size={44} />
+                      <View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={[styles.authorName, { color: colors.text }]}>
+                            {activePostForComments.authorName}
+                          </Text>
+                          <Ionicons name="checkmark-circle" size={14} color="#1D9BF0" />
+                        </View>
+                        <Text style={{ color: colors.textMuted, fontSize: 13 }}>
+                          @{activePostForComments.authorUsername} · {activePostForComments.createdAt}
+                        </Text>
+                      </View>
                     </View>
+                    <Text style={[styles.threadParentBody, { color: colors.text }]}>
+                      {activePostForComments.content}
+                    </Text>
+                    <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: '600' }}>
+                      {activePostForComments.comments.length} Replies · {activePostForComments.likes.length} Likes
+                    </Text>
                   </View>
-                ))}
-              </ScrollView>
-              <View style={styles.commentInputRow}>
+
+                  {/* Replies List */}
+                  {activePostForComments.comments.length === 0 ? (
+                    <View style={styles.emptyWrap}>
+                      <Text style={{ color: colors.textMuted, fontSize: 14 }}>
+                        No replies yet. Be the first to answer!
+                      </Text>
+                    </View>
+                  ) : (
+                    activePostForComments.comments.map((c) => (
+                      <View key={c.id} style={[styles.replyRow, { borderBottomColor: hairline }]}>
+                        <StudentAvatar avatarId={c.authorAvatar} size={36} />
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={{ color: colors.text, fontWeight: '800', fontSize: 14 }}>
+                              {c.authorName}
+                            </Text>
+                            <Text style={{ color: colors.textMuted, fontSize: 12 }}>{c.createdAt}</Text>
+                          </View>
+                          <Text style={{ color: colors.text, fontSize: 14.5, lineHeight: 20 }}>
+                            {c.content}
+                          </Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              )}
+
+              {/* Sticky Reply Input Bar */}
+              <View style={[styles.replyBar, { borderTopColor: hairline }]}>
+                <StudentAvatar avatarId={profile.avatarEmoji} bgColor={profile.avatarBg} size={34} />
                 <TextInput
                   value={commentDraft}
                   onChangeText={setCommentDraft}
-                  placeholder="Write a reply..."
+                  placeholder="Post your reply..."
                   placeholderTextColor={colors.textMuted}
-                  style={[styles.commentInput, { color: colors.text, borderColor: colors.border }]}
+                  style={[styles.replyInput, { color: colors.text }]}
+                  returnKeyType="send"
+                  onSubmitEditing={handleSendReply}
                 />
                 <AnimatedPressable
-                  onPress={() => {
-                    if (activePostForComments && commentDraft.trim()) {
-                      addCommentToPost(activePostForComments.id, commentDraft);
-                      setCommentDraft('');
-                    }
-                  }}
-                  style={[styles.postMiniBtn, { backgroundColor: colors.coral }]}
+                  onPress={handleSendReply}
+                  style={[
+                    styles.publishBtn,
+                    { backgroundColor: commentDraft.trim() ? '#1D9BF0' : 'rgba(29,155,240,0.45)' },
+                  ]}
                 >
-                  <Text style={styles.postMiniText}>Send</Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 }}>Reply</Text>
                 </AnimatedPressable>
               </View>
-            </View>
-          </View>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
         </Modal>
       </SafeAreaView>
     </AppBackground>
@@ -691,37 +850,236 @@ export default function CommunityScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  tabsRow: { flexDirection: 'row', paddingHorizontal: 14, gap: 6, marginBottom: 10 },
-  tabPill: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  tabText: { fontSize: 12, fontWeight: '700' },
-  scroll: { paddingHorizontal: 16, paddingBottom: 120, gap: 12 },
-  composerCard: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderRadius: 20,
-    borderWidth: 1,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  avatarSm: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  topAvatarBtn: { padding: 2 },
+  topTitleWrap: { flex: 1, alignItems: 'center' },
+  topTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -0.3 },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  composerInput: { flex: 1, fontSize: 13.5, paddingVertical: 6 },
-  composerIconBtn: { padding: 6 },
-  postMiniBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
-  postMiniText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '800' },
-  previewWrap: { position: 'relative', borderRadius: 16, overflow: 'hidden' },
-  previewImg: { width: '100%', height: 160, borderRadius: 16 },
+  searchStrip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  searchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  searchInput: { flex: 1, fontSize: 14, padding: 0 },
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    position: 'relative',
+  },
+  tabLabel: { fontSize: 14 },
+  tabUnderline: {
+    position: 'absolute',
+    bottom: 0,
+    width: 48,
+    height: 3,
+    borderRadius: 999,
+  },
+  feedContent: { paddingBottom: 110 },
+  inlinePromptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  inlinePromptPlaceholder: { flex: 1, fontSize: 15, fontWeight: '500' },
+  inlinePromptBtn: {
+    backgroundColor: '#1D9BF0',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  inlinePromptBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 },
+  tweetRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  tweetLeft: { paddingTop: 2 },
+  tweetRight: { flex: 1, gap: 6 },
+  tweetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  tweetAuthorLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+    flexShrink: 1,
+  },
+  authorName: { fontSize: 15, fontWeight: '800', flexShrink: 0 },
+  authorMeta: { fontSize: 13.5, flexShrink: 1 },
+  moreBtn: { padding: 4 },
+  tagLine: { flexDirection: 'row' },
+  topicChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  tweetBody: { fontSize: 15.5, lineHeight: 22 },
+  tweetMedia: {
+    width: '100%',
+    height: 200,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  actionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingRight: 16,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+  },
+  actionCount: { fontSize: 12.5, fontWeight: '600' },
+  fab: {
+    position: 'absolute',
+    right: 18,
+    bottom: 92,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#1D9BF0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1D9BF0',
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 28,
+    gap: 8,
+  },
+  emptyTitle: { fontSize: 17, fontWeight: '800', textAlign: 'center' },
+  emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  groupPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 999,
+  },
+  groupForm: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 14,
+  },
+  visBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 999,
+  },
+  groupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  groupIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  modalSafe: { flex: 1 },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  publishBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  tagSelectorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  tagOption: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  modalTextInput: {
+    fontSize: 17,
+    lineHeight: 24,
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  previewWrap: { position: 'relative', marginTop: 8 },
+  previewImg: { width: '100%', height: 190, borderRadius: 14 },
   removeImgBtn: {
     position: 'absolute',
     top: 8,
@@ -729,70 +1087,38 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  postCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 14,
-    gap: 10,
-  },
-  postHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  authorRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  authorName: { fontSize: 14, fontWeight: '800' },
-  metaText: { fontSize: 11.5 },
-  tagPill: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999 },
-  tagText: { fontSize: 10.5, fontWeight: '800' },
-  postBody: { fontSize: 14, lineHeight: 20 },
-  postImg: { width: '100%', height: 190, borderRadius: 14 },
-  actionsRow: {
+  composerFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 10,
-    borderTopWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, padding: 4 },
-  actionCount: { fontSize: 12.5, fontWeight: '600' },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  groupTitle: { fontSize: 16, fontWeight: '800' },
-  joinBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999 },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 98,
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+  footerIconBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  threadParent: {
+    padding: 16,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  threadParentBody: { fontSize: 17.5, lineHeight: 25 },
+  replyRow: {
+    flexDirection: 'row',
+    gap: 10,
+    padding: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  replyBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    padding: 20,
-    paddingBottom: 34,
-    gap: 14,
-  },
-  modalTextarea: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 12,
-    minHeight: 100,
-    textAlignVertical: 'top',
-    fontSize: 14,
-  },
-  commentRow: { flexDirection: 'row', gap: 10, paddingVertical: 8 },
-  commentInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  commentInput: { flex: 1, borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+  replyInput: { flex: 1, fontSize: 15, paddingVertical: 6 },
 });
